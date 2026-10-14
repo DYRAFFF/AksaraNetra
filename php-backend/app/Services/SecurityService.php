@@ -79,9 +79,10 @@ class SecurityService
     /**
      * Extract client IP from request, taking TRUST_PROXY into account.
      */
-    public static function clientIp(mixed $request, bool $trustProxy = false): string
+    public static function clientIp(mixed $request, bool|object $trustProxy = false): string
     {
-        if ($trustProxy) {
+        $shouldTrust = is_object($trustProxy) ? (bool) ($trustProxy->trustProxy ?? false) : (bool) $trustProxy;
+        if ($shouldTrust) {
             $forwarded = null;
             if ($request instanceof Request) {
                 $forwarded = $request->header('x-forwarded-for');

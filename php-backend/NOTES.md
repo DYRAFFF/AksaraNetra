@@ -62,3 +62,20 @@ This file records specific quirks, edge cases, and design peculiarities identifi
   Node's `DatabaseSync` passes JavaScript numbers directly to SQLite as native integers. In contrast, PHP PDO's `$stmt->execute([$param])` binds parameters by default as `PDO::PARAM_STR`. In SQLite type affinity comparisons, TEXT is evaluated as greater than INTEGER (e.g. `MAX(50, '30')` in SQLite returns `'30'`).
 - **Preservation rule**: In `JobStore.php`, queries using numeric comparisons (`MAX(progress, CAST(? AS INTEGER))`, `created_at <= CAST(? AS INTEGER)`, `expires_at <= CAST(? AS INTEGER)`) explicitly cast placeholder values to `INTEGER` to ensure type-safe numeric evaluation matching Node's native integer bindings.
 
+---
+
+## 7. Windows Node Subprocess Environment Inheritance
+- **Location**: `php-backend/app/Services/BridgeClient.php`
+- **Quirk**:
+  When spawning Node.js subprocesses from PHP via `Symfony\Component\Process\Process` on Windows, Node 22 cryptographic initialization (`ncrypto::CSPRNG`) requires access to the Windows CryptoAPI, which depends on `SYSTEMROOT` (and `PATH`) existing in the environment. Stripping these environment variables causes Node to fail immediately with an assertion error.
+- **Preservation rule**: `BridgeClient.php` explicitly preserves `SYSTEMROOT`, `SystemDrive`, and `PATH` in the process environment when spawning `audit-cli.mjs`.
+
+---
+
+## 8. Symfony BinaryFileResponse Default Cache-Control
+- **Location**: `php-backend/app/Http/Controllers/AuditArtifactController.php` vs `backend/src/app.mjs:240`
+- **Quirk**:
+  In Node, `sendArtifact()` sends `cache-control: max-age=300, private`. In Laravel / Symfony, `BinaryFileResponse` defaults to `public` unless `$response->setPrivate()` is explicitly called.
+- **Preservation rule**: `AuditArtifactController` invokes `$response->setPrivate()->setMaxAge(300)` to ensure byte-for-byte identical `Cache-Control: max-age=300, private` headers.
+
+

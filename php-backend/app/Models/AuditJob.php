@@ -88,24 +88,43 @@ class AuditJob implements JsonSerializable
         ];
     }
 
-    public function toPublic(): array
+    public static function formatIsoMilliseconds(?int $ms): ?string
+    {
+        if ($ms === null) {
+            return null;
+        }
+
+        $seconds = (int) floor($ms / 1000);
+        $remainder = $ms % 1000;
+        if ($remainder < 0) {
+            $remainder += 1000;
+        }
+
+        return gmdate('Y-m-d\TH:i:s', $seconds) . sprintf('.%03dZ', $remainder);
+    }
+
+    public function toPublic(?int $queuePosition = null): array
     {
         return [
-            'id' => $this->id,
-            'targetUrl' => $this->targetUrl,
+            'jobId' => $this->id,
+            'url' => $this->targetUrl,
             'status' => $this->status,
             'stage' => $this->stage,
             'progress' => $this->progress,
+            'queuePosition' => $queuePosition,
             'attempts' => $this->attempts,
-            'errorCode' => $this->errorCode,
-            'errorMessage' => $this->errorMessage,
-            'createdAt' => $this->createdAt,
-            'updatedAt' => $this->updatedAt,
-            'startedAt' => $this->startedAt,
-            'finishedAt' => $this->finishedAt,
-            'expiresAt' => $this->expiresAt,
+            'canCancel' => $this->status === 'queued' || $this->status === 'running',
+            'createdAt' => self::formatIsoMilliseconds($this->createdAt),
+            'startedAt' => self::formatIsoMilliseconds($this->startedAt),
+            'finishedAt' => self::formatIsoMilliseconds($this->finishedAt),
+            'expiresAt' => self::formatIsoMilliseconds($this->expiresAt),
+            'error' => $this->errorCode ? [
+                'code' => $this->errorCode,
+                'message' => $this->errorMessage,
+            ] : null,
         ];
     }
+
 
     public function jsonSerialize(): array
     {

@@ -26,6 +26,14 @@ class AppServiceProvider extends ServiceProvider
             $config = $app->make(AksaraConfig::class);
             return new JobStore($config->databasePath);
         });
+
+        $this->app->singleton(\App\Services\BridgeClientInterface::class, function () {
+            return new \App\Services\BridgeClient();
+        });
+
+        $this->app->singleton(\App\Services\AuditWorkerInterface::class, function ($app) {
+            return new \App\Services\AuditWorker($app->make(JobStore::class));
+        });
     }
 
     /**

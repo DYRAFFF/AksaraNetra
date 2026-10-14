@@ -74,6 +74,8 @@ class AksaraConfig
         $requiredSecret = function () use ($overrides, $environment, $getEnv): string {
             if (isset($overrides['secret'])) {
                 $val = $overrides['secret'];
+            } elseif (isset($overrides['BACKEND_SECRET'])) {
+                $val = $overrides['BACKEND_SECRET'];
             } else {
                 $val = $getEnv('BACKEND_SECRET') ?? '';
             }
@@ -86,10 +88,11 @@ class AksaraConfig
         };
 
         $rawOrigins = $overrides['frontendOrigins']
+            ?? (isset($overrides['FRONTEND_ORIGINS']) ? (is_array($overrides['FRONTEND_ORIGINS']) ? $overrides['FRONTEND_ORIGINS'] : array_values(array_filter(array_map('trim', explode(',', (string) $overrides['FRONTEND_ORIGINS']))))) : null)
             ?? array_values(array_filter(array_map('trim', explode(',', $getEnv('FRONTEND_ORIGINS') ?? 'http://localhost:3000'))));
 
-        $dataDirRaw = $overrides['dataDir'] ?? $getEnv('BACKEND_DATA_DIR') ?? 'backend/data';
-        $dataDir = $overrides['dataDir'] ?? (
+        $dataDirRaw = $overrides['dataDir'] ?? $overrides['BACKEND_DATA_DIR'] ?? $getEnv('BACKEND_DATA_DIR') ?? 'backend/data';
+        $dataDir = $overrides['dataDir'] ?? $overrides['BACKEND_DATA_DIR'] ?? (
             str_starts_with($dataDirRaw, '/') || (strlen($dataDirRaw) > 2 && $dataDirRaw[1] === ':')
                 ? $dataDirRaw
                 : (function_exists('app') && app() instanceof \Illuminate\Foundation\Application
@@ -107,17 +110,17 @@ class AksaraConfig
         $this->trustProxy = $overrides['trustProxy'] ?? ($getEnv('TRUST_PROXY') === '1');
         $this->secret = $requiredSecret();
         $this->concurrency = 1;
-        $this->timeoutMs = $integer('AUDIT_TIMEOUT_MS', 180000, 30000, 600000);
-        $this->retentionMs = $integer('RESULT_RETENTION_MS', 7 * self::DAY, self::HOUR, 30 * self::DAY);
-        $this->rateWindowMs = self::HOUR;
-        $this->rateLimit = $integer(
+        $this->timeoutMs = $overrides['timeoutMs'] ?? $integer('AUDIT_TIMEOUT_MS', 180000, 30000, 600000);
+        $this->retentionMs = $overrides['retentionMs'] ?? $integer('RESULT_RETENTION_MS', 7 * self::DAY, self::HOUR, 30 * self::DAY);
+        $this->rateWindowMs = $overrides['rateWindowMs'] ?? self::HOUR;
+        $this->rateLimit = $overrides['rateLimit'] ?? $integer(
             'AUDIT_RATE_LIMIT',
             $environment === 'production' ? 5 : 10,
             1,
             100
         );
-        $this->maxBodyBytes = $integer('MAX_BODY_BYTES', 8192, 1024, 65536);
-        $this->cleanupIntervalMs = $integer('CLEANUP_INTERVAL_MS', self::HOUR, 60000, self::DAY);
+        $this->maxBodyBytes = $overrides['maxBodyBytes'] ?? $integer('MAX_BODY_BYTES', 8192, 1024, 65536);
+        $this->cleanupIntervalMs = $overrides['cleanupIntervalMs'] ?? $integer('CLEANUP_INTERVAL_MS', self::HOUR, 60000, self::DAY);
     }
 
     public static function loadConfig(array $overrides = [], ?array $env = null): self
