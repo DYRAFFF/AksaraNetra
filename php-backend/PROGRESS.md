@@ -53,4 +53,58 @@ Tracking progress across the 7 phases of the PHP/Laravel backend port.
 - None. All specifications and behaviors are fully accounted for and traceable to reference code.
 
 ### Instructions for Next Phase (Phase 1)
-- Phase 1 will scaffold the Laravel 11/12 application (API-only, no Blade, no Vite) inside `php-backend/`, establish configuration loading mirroring `config.mjs`, set up the SQLite database migration for `audit_jobs`, and implement the security helper service (`security.mjs`).
+- Formulate the detailed implementation plan in `php-backend/PLAN.md` covering the folder structure, class responsibilities, Composer packages, test strategy, SQLite multi-process safety, and risk mitigations.
+
+---
+
+## Phase 1: Plan
+
+- **Status**: Completed (Awaiting User Plan Approval)
+- **Date**: 2026-10-14
+- **Branch**: `php-backend`
+
+### What Was Done
+1. Confirmed git tracking on branch `php-backend` and verified clean working tree.
+2. Ran and validated baseline test suites:
+   - `npm --prefix backend test` (10/10 passed)
+   - `npm run test:frontend` (5/5 passed)
+3. Re-read and analyzed all core Node backend files (`app.mjs`, `security.mjs`, `config.mjs`, `store.mjs`, `worker.mjs`, `auditor.mjs`, `report.mjs`, `server.mjs`, test suites).
+4. Authored comprehensive implementation plan in `php-backend/PLAN.md` addressing all 6 required areas:
+   - Final folder structure of `php-backend/` (Laravel app directories, bridge, commands, tests, Docker config).
+   - Detailed class and file responsibility list with one line per responsibility.
+   - Pinned Composer packages (`laravel/framework: ^11.0`, `symfony/process: ^7.0`, `phpunit/phpunit: ^11.0`) with explicit justifications.
+   - Comprehensive test strategy mapping all Node tests to PHP tests, specifying `FakeAuditor` for Chromium-free test execution, and defining Phase 7 parity checks.
+   - Multi-process SQLite safety specification utilizing WAL mode, 5000ms busy timeout, and `BEGIN IMMEDIATE` atomic claiming in `claimNext()`.
+   - Identification of risks and open questions (route prefix, millisecond timestamps, HTML report escaping, process signaling, memory/body size enforcement) with concrete solutions.
+
+### Files Created / Changed
+- `php-backend/PLAN.md` (Created): Complete implementation plan for the PHP/Laravel backend.
+- `php-backend/PROGRESS.md` (Updated): Recorded Phase 1 completion and handoff.
+
+### How to Run Tests / Commands for this Phase
+- Verify backend tests:
+  ```bash
+  npm --prefix backend test
+  ```
+- Verify frontend contract tests:
+  ```bash
+  npm run test:frontend
+  ```
+
+### Decisions Made
+1. **Laravel Version**: Pinned to Laravel 11 (`^11.0`) on PHP 8.3 in API-only mode (no Blade, no Vite, no Sanctum, no standard CORS package).
+2. **Empty Route Prefix**: Routes configured without `/api` prefix to ensure drop-in parity with Next.js frontend calls.
+3. **Chromium-Free Testing**: Introduced `AuditorInterface` with an in-memory `FakeAuditor` to keep unit/feature test runs fast and independent of Chromium.
+4. **SQLite Concurrency**: Enforced `PRAGMA journal_mode=WAL;`, `PRAGMA busy_timeout=5000;`, and `BEGIN IMMEDIATE;` for `claimNext()` to safeguard against race conditions between HTTP API and worker processes.
+5. **Byte-Identical HTML**: `ReportRenderer` ports the exact regex replacements from `report.mjs` to ensure byte-level compatibility.
+
+### Deviations from Plan
+- None. No application code was written, strictly following Phase 1 constraints.
+
+### Open Problems
+- None. Awaiting user review and approval of `php-backend/PLAN.md`.
+
+### Instructions for Next Phase (Phase 2)
+- Start Phase 2 in a NEW conversation using its prompt file.
+- Phase 2 will scaffold the Laravel 11 application in `php-backend/`, implement `AksaraConfig` and `SecurityService`, create the database migration for `audit_jobs`, and write unit tests for config and security.
+
