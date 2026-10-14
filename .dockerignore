@@ -1,0 +1,32 @@
+# Frontend (tidak dipakai backend image)
+src/
+public/
+next.config.ts
+tsconfig.json
+eslint.config.mjs
+next-env.d.ts
+package-lock.json
+node_modules/
+.next/
+out/
+
+# Engine: jangan bawa node_modules lokal, biar diinstall bersih di image
+engine/node_modules/
+engine/output*/
+engine/ui/data/
+
+# Backend: jangan bawa data runtime lama & node_modules lokal
+backend/data/
+backend/backend/
+backend/node_modules/
+
+# Umum
+.git/
+docs/
+*.md
+.env
+.env.local
+.env.*.local
+tests/
+engine/tests/
+backend/tests/

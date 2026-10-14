@@ -1,0 +1,230 @@
+/*
+  Modern Clean Editorial Footer (Light Theme)
+  White background, logo card on the left with text,
+  and editorial navigation rows with arrows on the right.
+*/
+
+.footer {
+  position: relative;
+  z-index: 60;
+  margin-top: 0;
+  background: #ffffff;
+  border-top: none;
+  color: var(--color-text);
+  font-family: var(--font-plus-jakarta-sans), sans-serif;
+}
+
+.footerContainer {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: clamp(32px, 6vw, 72px);
+  width: 100%;
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding: clamp(52px, 7vw, 76px) var(--space-md) clamp(36px, 5vw, 52px);
+}
+
+/* --- Sisi Kiri: Logo + Teks --- */
+
+.identitasWrapper {
+  display: flex;
+  align-items: flex-start;
+  gap: clamp(16px, 2.5vw, 24px);
+}
+
+.brandIconCard {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 60px;
+  height: 60px;
+  border-radius: var(--radius-lg, 16px);
+  background: #ffffff;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  box-shadow:
+    0 8px 20px -4px rgba(37, 99, 235, 0.08),
+    0 2px 6px rgba(0, 0, 0, 0.03);
+  flex: none;
+  transition: transform var(--transition-cepat), box-shadow var(--transition-cepat);
+}
+
+.brandIconCard:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 12px 28px -4px rgba(37, 99, 235, 0.14),
+    0 4px 10px rgba(0, 0, 0, 0.05);
+}
+
+.brandIconImg {
+  display: block;
+  object-fit: contain;
+}
+
+.identitasContent {
+  display: flex;
+  flex-direction: column;
+}
+
+.merek {
+  margin: 0;
+  color: #0f172a;
+  font-size: clamp(22px, 2.4vw, 28px);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.ringkas {
+  max-width: 44ch;
+  margin-top: 10px;
+  margin-bottom: 0;
+  color: #64748b;
+  font-size: 15px;
+  line-height: 1.6;
+  font-weight: 500;
+}
+
+.garisAksen {
+  display: block;
+  width: 54px;
+  height: 3px;
+  margin-top: 20px;
+  border-radius: var(--radius-pill);
+  background: var(--color-primary-bright, #2563eb);
+}
+
+/* --- Sisi Kanan: Navigasi --- */
+
+.navigasi {
+  display: flex;
+  flex-direction: column;
+}
+
+.navJudul {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.navDaftar {
+  display: flex;
+  flex-direction: column;
+  margin-top: 12px;
+  margin-bottom: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.navTautan {
+  display: flex;
+  width: 100%;
+  min-height: 50px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 8px 8px 0;
+  border: none;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.85);
+  background: transparent;
+  color: #0f172a;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    color var(--transition-cepat),
+    padding-left var(--transition-sedang),
+    border-color var(--transition-cepat);
+}
+
+.navTautan:hover {
+  padding-left: 8px;
+  border-color: #94a3b8;
+  color: var(--color-primary-bright, #2563eb);
+}
+
+.navPanah {
+  flex: none;
+  color: #94a3b8;
+  transition:
+    transform var(--transition-sedang),
+    color var(--transition-cepat);
+}
+
+.navTautan:hover .navPanah,
+.navTautan:focus-visible .navPanah {
+  color: var(--color-primary-bright, #2563eb);
+  transform: translateX(4px);
+}
+
+.navTautan:focus-visible {
+  outline: 3px solid var(--color-primary-bright, #2563eb);
+  outline-offset: 3px;
+}
+
+/* --- Baris Bawah / Copyright --- */
+
+.barisBawah {
+  border-top: 1px solid rgba(226, 232, 240, 0.7);
+}
+
+.barisBawahIsi {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px var(--space-md);
+  width: 100%;
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding: 22px var(--space-md);
+}
+
+.copyright {
+  margin: 0;
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.penyangkalan {
+  margin: 0;
+  max-width: var(--reading-width);
+  color: #64748b;
+  font-size: 13.5px;
+}
+
+@media (max-width: 860px) {
+  .footerContainer {
+    grid-template-columns: 1fr;
+    gap: 36px;
+    padding-top: 40px;
+  }
+}
+
+@media (max-width: 640px) {
+  .identitasWrapper {
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .barisBawahIsi {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .navTautan:hover {
+    padding-left: 0;
+  }
+
+  .navTautan:hover .navPanah,
+  .navTautan:focus-visible .navPanah {
+    transform: none;
+  }
+}
