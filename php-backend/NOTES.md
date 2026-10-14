@@ -53,3 +53,12 @@ This file records specific quirks, edge cases, and design peculiarities identifi
 - **Quirk**:
   `updateProgress()` uses `MAX(progress, ?)` and clamps to 99: `Math.max(0, Math.min(99, progress))`. A job cannot decrease progress during a run, and cannot reach 100 until `complete()` is called.
 - **Preservation rule**: Reproduce the same SQL `MAX(progress, ?)` and PHP min/max clamping.
+
+---
+
+## 6. SQLite Type Affinity and PDO Parameter Binding
+- **Location**: `php-backend/app/Services/JobStore.php` vs `backend/src/store.mjs`
+- **Quirk**:
+  Node's `DatabaseSync` passes JavaScript numbers directly to SQLite as native integers. In contrast, PHP PDO's `$stmt->execute([$param])` binds parameters by default as `PDO::PARAM_STR`. In SQLite type affinity comparisons, TEXT is evaluated as greater than INTEGER (e.g. `MAX(50, '30')` in SQLite returns `'30'`).
+- **Preservation rule**: In `JobStore.php`, queries using numeric comparisons (`MAX(progress, CAST(? AS INTEGER))`, `created_at <= CAST(? AS INTEGER)`, `expires_at <= CAST(? AS INTEGER)`) explicitly cast placeholder values to `INTEGER` to ensure type-safe numeric evaluation matching Node's native integer bindings.
+

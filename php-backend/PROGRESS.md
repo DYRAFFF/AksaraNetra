@@ -108,3 +108,102 @@ Tracking progress across the 7 phases of the PHP/Laravel backend port.
 - Start Phase 2 in a NEW conversation using its prompt file.
 - Phase 2 will scaffold the Laravel 11 application in `php-backend/`, implement `AksaraConfig` and `SecurityService`, create the database migration for `audit_jobs`, and write unit tests for config and security.
 
+---
+
+## Phase 2: Scaffold, Config, Security, Database
+
+- **Status**: Completed
+- **Date**: 2026-10-14
+- **Branch**: `php-backend`
+
+### What Was Done
+1. Initialized clean Laravel 11 application (`v11.57.0`) in `php-backend/` in API-only mode (disabled Blade, Vite, sessions, and cookies).
+2. Configured SQLite with WAL mode (`PRAGMA journal_mode = WAL;`), foreign keys (`PRAGMA foreign_keys = ON;`), and busy timeout (`PRAGMA busy_timeout = 5000;`).
+3. Implemented `App\Services\AksaraConfig`:
+   - Reads environment variables identically to `backend/src/config.mjs` (`PORT`, `HOST`, `FRONTEND_ORIGINS`, `BACKEND_SECRET`, `BACKEND_DATA_DIR`, `TRUST_PROXY`, `AUDIT_TIMEOUT_MS`, `RESULT_RETENTION_MS`, `AUDIT_RATE_LIMIT`, `MAX_BODY_BYTES`, `CLEANUP_INTERVAL_MS`).
+   - Validates integer ranges and enforces Indonesian error messages verbatim (using unicode en-dash `–`).
+   - Enforces min 32 characters for `BACKEND_SECRET` in production.
+   - Created `php-backend/.env.example` and configured `config/aksaranetra.php`.
+4. Implemented `App\Services\SecurityService`:
+   - Exact byte-for-byte reproduction of `backend/src/security.mjs`.
+   - `randomToken()` generating URL-safe unpadded base64url random bytes.
+   - `randomJobId()` generating `aud_` prefixed 28-character identifiers (18 random bytes).
+   - `digest()` generating HMAC-SHA256 hex string.
+   - `deriveShareToken()` generating HMAC-SHA256 base64url string from `share:{jobId}:{accessToken}`.
+   - `safeEqualHex()` executing constant-time hex comparison.
+   - `clientIp()` resolving direct remote address or first IP from `x-forwarded-for` under `TRUST_PROXY`.
+   - `bearerToken()` extracting Bearer header or falling back to `accessToken` query parameter.
+5. Created database migration `database/migrations/2026_10_14_000000_create_audit_jobs_table.php` defining the `audit_jobs` table with identical columns, types, CHECK constraints, and indexes as Node's `jobs` table.
+6. Implemented `App\Models\AuditJob` DTO/model and `App\Services\JobStore` repository mirroring all 16 methods of `backend/src/store.mjs`:
+   - `createJob`, `getJob`, `countRecentByIp`, `queuePosition`, `findReusable`, `claimNext`, `updateProgress`, `requestCancel`, `complete`, `completeQueued`, `fail`, `cancelRunning`, `retry`, `expired`, `deleteExpired`, and `recoverInterrupted`.
+   - Atomic job claiming in `claimNext()` using `BEGIN IMMEDIATE`.
+   - Checkpoint restoration in `recoverInterrupted()` (detecting `snapshot.json` and setting progress to 90%).
+7. Authored comprehensive test suites:
+   - `tests/Unit/SecurityTest.php`: Verified cryptographic helpers against fixed-input test vectors generated directly from Node `security.mjs`.
+   - `tests/Unit/ConfigTest.php`: Tested defaults, production secret length enforcement, and Indonesian range error messages.
+   - `tests/Feature/StoreTest.php`: Ported tests from `backend/tests/store.test.mjs`, verifying crash recovery, expired artifact deletion, monotonic progress clamping, and full job lifecycles.
+   - Ran all tests: 16 tests, 107 assertions, 100% passing.
+
+### Files Created / Changed
+- `php-backend/composer.json`: Application dependencies (`laravel/framework: ^11.0`, `symfony/process: ^7.0`, `phpunit/phpunit: ^11.0`).
+- `php-backend/composer.lock`: Pinned package lockfile.
+- `php-backend/.env.example`: Environment configuration template mirroring `config.mjs`.
+- `php-backend/.gitignore`: Ignore patterns for vendor, cache, and runtime artifacts.
+- `php-backend/artisan`: Laravel CLI entrypoint.
+- `php-backend/bootstrap/app.php`: API-only application configuration with empty route prefix.
+- `php-backend/bootstrap/providers.php`: Provider registrations.
+- `php-backend/app/Providers/AppServiceProvider.php`: Service container singleton bindings.
+- `php-backend/config/app.php`: Application configuration.
+- `php-backend/config/database.php`: SQLite connection with WAL, busy timeout, and directory/file auto-initialization.
+- `php-backend/config/aksaranetra.php`: AksaraNetra configuration bridge.
+- `php-backend/routes/api.php`: API routes file.
+- `php-backend/routes/console.php`: Console commands file.
+- `php-backend/database/migrations/2026_10_14_000000_create_audit_jobs_table.php`: SQLite schema migration.
+- `php-backend/app/Models/AuditJob.php`: Audit job model / DTO.
+- `php-backend/app/Services/AksaraConfig.php`: Configuration loading and validation service.
+- `php-backend/app/Services/SecurityService.php`: Cryptographic and request security helpers.
+- `php-backend/app/Services/JobStore.php`: SQLite database repository with atomic transactions.
+- `php-backend/phpunit.xml`: PHPUnit testing configuration.
+- `php-backend/tests/TestCase.php`: Base test case.
+- `php-backend/tests/CreatesApplication.php`: Application bootstrapper for tests.
+- `php-backend/tests/Unit/ConfigTest.php`: Configuration unit tests.
+- `php-backend/tests/Unit/SecurityTest.php`: Cryptographic helper unit tests with Node parity vectors.
+- `php-backend/tests/Feature/StoreTest.php`: Database repository tests ported from Node.
+- `php-backend/NOTES.md`: Recorded SQLite type affinity quirk with PDO parameter binding and solution.
+- `php-backend/PROGRESS.md`: Recorded Phase 2 completion.
+
+### How to Run Tests / Commands for this Phase
+- Run PHP backend tests:
+  ```powershell
+  $env:PATH = "C:\xampp\php;" + $env:PATH
+  php php-backend/vendor/bin/phpunit -c php-backend/phpunit.xml
+  ```
+  Or from within `php-backend/`:
+  ```powershell
+  php vendor/bin/phpunit
+  ```
+- Run Node backend tests (verify baseline unchanged):
+  ```bash
+  npm --prefix backend test
+  ```
+- Run frontend contract tests:
+  ```bash
+  npm run test:frontend
+  ```
+
+### Decisions Made
+1. **Security Vector Parity**: Ran Node `security.mjs` with fixed secrets to extract reference vectors and verified identical hex digests and base64url share tokens in `SecurityTest`.
+2. **SQLite PDO Binding & Type Affinity**: In PDO SQLite, parameter arrays bind values as string by default, causing SQLite scalar `MAX(int, str)` to prioritize string over integer. Resolved by adding `CAST(? AS INTEGER)` in `JobStore.php` queries for type-safe comparisons.
+3. **Database File Auto-Creation**: Configured SQLite connector resolver in `database.php` to ensure the target data directory and sqlite file exist prior to executing connection statements.
+
+### Deviations from Plan
+- None. All scaffolding, configuration, security services, migrations, repositories, and tests follow `php-backend/PLAN.md`.
+
+### Open Problems
+- None. All tests pass with zero errors and zero warnings.
+
+### Instructions for Next Phase (Phase 3)
+- Start Phase 3 in a NEW conversation using its prompt file.
+- Phase 3 will implement the Node bridge (`php-backend/bridge/audit-cli.mjs`) wrapping the audit engine (`checkUrl`, `auditUrl`, `renderPdf`), and its PHP client (`BridgeClient.php`), plus bridge parity tests.
+
+
