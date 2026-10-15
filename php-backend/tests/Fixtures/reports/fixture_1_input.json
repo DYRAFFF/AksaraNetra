@@ -1,0 +1,48 @@
+{
+  "snapshot": {
+    "engineVersion": "0.3.0",
+    "capturedAt": "2026-10-15T10:00:00.000Z",
+    "disclaimer": "Tampilan aksesibilitas tidak resmi.",
+    "source": {
+      "title": "Portal Berita Resmi & Informasi Publik",
+      "finalUrl": "https://example.com/portal"
+    },
+    "summary": {
+      "beforeTotal": 4,
+      "afterTotal": 1,
+      "reductionPercent": 75
+    },
+    "counts": {
+      "fixed": 3
+    },
+    "warnings": {
+      "wcagRegressionClean": true,
+      "worsenedRules": []
+    }
+  },
+  "report": {
+    "fixed": [
+      {
+        "rule": "link-name",
+        "selector": ".sosial > a[target=\"_blank\"]",
+        "status": "verified-fixed",
+        "confidence": 0.9
+      },
+      {
+        "rule": "image-alt",
+        "selector": "header img.logo",
+        "status": "verified-fixed",
+        "confidence": 1
+      }
+    ],
+    "review": [
+      {
+        "rule": "color-contrast",
+        "selector": "button.submit",
+        "status": "needs-review",
+        "confidence": 0.5
+      }
+    ],
+    "rolledBackRecords": []
+  }
+}

@@ -12,9 +12,9 @@ use App\Services\AuditWorkerInterface;
 use App\Services\BridgeClient;
 use App\Services\BridgeClientInterface;
 use App\Services\JobStore;
+use App\Services\ReportRenderer;
 use App\Services\ReportRendererInterface;
 use App\Services\SecurityService;
-use App\Services\StubReportRenderer;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -43,7 +43,7 @@ class AppServiceProvider extends ServiceProvider
         });
 
         $this->app->singleton(ReportRendererInterface::class, function () {
-            return new StubReportRenderer();
+            return new ReportRenderer();
         });
 
         $this->app->singleton(AuditorInterface::class, function ($app) {

@@ -469,6 +469,96 @@ Tracking progress across the 7 phases of the PHP/Laravel backend port.
 - Start Phase 5 in a NEW conversation using its prompt file.
 - Phase 5 will implement the byte-identical HTML report renderer (`App\Services\ReportRenderer`) porting `backend/src/report.mjs`, and verify exact byte parity against Node `renderAuditReport()`.
 
+---
+
+## Phase 5: Report and PDF
+
+- **Status**: Completed
+- **Date**: 2026-10-15
+- **Branch**: `php-backend`
+
+### What Was Done
+1. **Byte-Identical Report Renderer (`App\Services\ReportRenderer`)**:
+   - Ported `backend/src/report.mjs` to PHP strictly adhering to Node behavior:
+     - `esc($value)`: Escapes only `&`, `<`, `>`, `"` to `&amp;`, `&lt;`, `&gt;`, `&quot;`. Single quotes are preserved unescaped matching Node's `.replace(/&/g, ...)` chain. Safely handles `null`, booleans (`true`/`false`), and numeric values.
+     - `rows($records)`: Emits `<p>Tidak ada.</p>` when empty, or an unformatted HTML table with `<code>` around selectors and escaped table cells.
+     - `stringifyRegression($regression)`: Formats WCAG regression data with exact 2-space indentation matching Node's `JSON.stringify(regression, null, 2)`, preserving slashes and unicode.
+     - `renderAuditReport($args)` & `render($snapshot, $report)`: Emits the exact HTML layout and inline CSS byte-for-byte identical to Node.
+2. **Parity Test Fixtures Generation**:
+   - Created 5 test fixtures in `php-backend/tests/Fixtures/reports/` using the real Node.js `renderAuditReport()` from `backend/src/report.mjs`:
+     - `fixture_1`: Standard full report with verified fixes, items for review, and clean WCAG regression status.
+     - `fixture_2`: Minimal report with empty source/summary and multiple worsened WCAG regression rules.
+     - `fixture_3`: Special characters, HTML tags, quotes, URLs with query parameters, and rolled-back records.
+     - `fixture_4`: Null/empty values with default fallback title ("Laporan audit AksaraNetra") and zero metrics.
+     - `fixture_5`: Multi-rule regression with nested tags, affected selectors, floating confidence scores, and Indonesian unicode characters.
+3. **Comprehensive Unit Testing (`ReportRendererTest`)**:
+   - Authored `php-backend/tests/Unit/ReportRendererTest.php` with 5 test cases (45 assertions):
+     - Verified escaping helper against special characters, quotes, nulls, booleans, and numbers.
+     - Verified table row formatting and empty list notices.
+     - Verified 2-space JSON indentation format.
+     - Verified byte-for-byte parity against all 5 Node fixtures asserting string identity, byte length, and MD5 hash match.
+4. **Service Container Wiring & Auditor Integration**:
+   - Bound `ReportRenderer` to `ReportRendererInterface` in `AppServiceProvider.php`.
+   - Removed temporary Phase 4 `StubReportRenderer.php`.
+   - Updated `AuditorTest.php` to use `ReportRenderer`, verifying that `Auditor` creates `report.html` and `report.pdf`.
+5. **Artifact Route & Quirk Verification (`ApiTest`)**:
+   - Added assertions to `ApiTest.php` verifying:
+     - Successful retrieval of `report.pdf` artifact with `Content-Type: application/pdf`, `Cache-Control: private, max-age=300`, and CSP headers.
+     - Reproduction of Quirk #1: when PDF rendering fails or is skipped and only `report.html` exists, the API links still point to `/artifacts/report.pdf`, which returns HTTP 404, while directly requesting `report.html` also returns HTTP 404 because `report.html` is not in `ARTIFACTS`.
+6. **Documentation**:
+   - Added Note 9 to `php-backend/NOTES.md` documenting JSON regression block 2-space indentation parity.
+   - Verified all 49 PHPUnit tests, 10 Node backend tests, and 5 frontend contract tests pass cleanly.
+
+### Files Created / Changed
+- `php-backend/app/Services/ReportRenderer.php` (Created): Byte-identical HTML report renderer porting `backend/src/report.mjs`.
+- `php-backend/app/Providers/AppServiceProvider.php` (Modified): Bound `ReportRenderer` to `ReportRendererInterface`.
+- `php-backend/app/Services/StubReportRenderer.php` (Deleted): Removed temporary Phase 4 stub.
+- `php-backend/tests/Fixtures/reports/` (Created): 5 Node-generated input JSON and expected HTML fixture pairs (`fixture_1` to `fixture_5`).
+- `php-backend/tests/Unit/ReportRendererTest.php` (Created): Unit tests for escaping, table rows, and byte-for-byte fixture parity.
+- `php-backend/tests/Feature/AuditorTest.php` (Modified): Updated to use `ReportRenderer` and assert `report.html` output.
+- `php-backend/tests/Feature/ApiTest.php` (Modified): Added `report.pdf` download tests and quirk verification.
+- `php-backend/NOTES.md` (Updated): Added Note 9 on 2-space JSON formatting parity.
+- `php-backend/PROGRESS.md` (Updated): Recorded Phase 5 completion.
+
+### How to Run Tests / Commands for this Phase
+- Run PHPUnit tests:
+  ```powershell
+  $env:PATH = "C:\xampp\php;" + $env:PATH
+  php php-backend/vendor/bin/phpunit -c php-backend/phpunit.xml
+  ```
+  Or using direct PHP path:
+  ```powershell
+  C:\xampp\php\php.exe php-backend/vendor/bin/phpunit -c php-backend/phpunit.xml
+  ```
+- Run ReportRenderer unit tests specifically:
+  ```powershell
+  C:\xampp\php\php.exe php-backend/vendor/bin/phpunit -c php-backend/phpunit.xml --filter ReportRendererTest
+  ```
+- Run Node backend tests (verify baseline unchanged):
+  ```bash
+  npm --prefix backend test
+  ```
+- Run frontend contract tests:
+  ```bash
+  npm run test:frontend
+  ```
+
+### Decisions Made
+1. **Deterministic 2-Space JSON Formatting**: Handled PHP's `json_encode` default 4-space indentation by regex replacement per indentation level, guaranteeing exact compatibility with Node's `JSON.stringify(..., null, 2)`.
+2. **Single Quote Preservation**: Node's `esc()` in `report.mjs` only replaces `&`, `<`, `>`, `"`. Single quotes `'` are deliberately left untouched, matching Node's implementation rather than PHP's default `htmlspecialchars(..., ENT_QUOTES)`.
+3. **Quirk Verification Test**: Explicitly asserted the quirk where the auditor can record `report.html` as `reportPdf` in the result payload, while the HTTP API route strictly serves `report.pdf` and returns 404 if `report.pdf` is missing.
+
+### Deviations from Plan
+- None. Everything implemented matches `php-backend/PLAN.md` and Phase 5 specifications.
+
+### Open Problems
+- None.
+
+### Instructions for Next Phase (Phase 6)
+- Start Phase 6 in a NEW conversation using its prompt file.
+- Phase 6 will implement Docker packaging (`Dockerfile`, `docker-compose.yml`, `entrypoint.sh`), unified container running PHP 8.3 + Composer deps + Node 22 + Playwright Chromium, healthcheck, and container startup verification.
+
+
 
 
 

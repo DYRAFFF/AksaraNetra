@@ -7,7 +7,7 @@ namespace Tests\Feature;
 use App\Exceptions\AuditCancelledException;
 use App\Models\AuditJob;
 use App\Services\Auditor;
-use App\Services\StubReportRenderer;
+use App\Services\ReportRenderer;
 use PHPUnit\Framework\TestCase;
 use Tests\Fakes\FakeBridgeClient;
 
@@ -87,7 +87,7 @@ class AuditorTest extends TestCase
         $job = $this->createJob($dir);
 
         $bridge = new FakeBridgeClient();
-        $renderer = new StubReportRenderer();
+        $renderer = new ReportRenderer();
         $auditor = new Auditor($bridge, $renderer);
 
         $progressUpdates = [];
@@ -112,6 +112,10 @@ class AuditorTest extends TestCase
 
         $this->assertFileExists($dir . DIRECTORY_SEPARATOR . 'report.html');
         $this->assertFileExists($dir . DIRECTORY_SEPARATOR . 'report.pdf');
+
+        $html = (string) file_get_contents($dir . DIRECTORY_SEPARATOR . 'report.html');
+        $this->assertStringStartsWith('<!doctype html><html lang="id">', $html);
+        $this->assertStringContainsString('AksaraNetra · Engine', $html);
     }
 
     public function test_auditor_resumes_from_checkpoint_without_calling_bridge_audit(): void
@@ -131,7 +135,7 @@ class AuditorTest extends TestCase
             return ['type' => 'result', 'snapshot' => []];
         });
 
-        $renderer = new StubReportRenderer();
+        $renderer = new ReportRenderer();
         $auditor = new Auditor($bridge, $renderer);
 
         $progressUpdates = [];
@@ -158,7 +162,7 @@ class AuditorTest extends TestCase
             throw new \RuntimeException('Chromium low memory');
         });
 
-        $renderer = new StubReportRenderer();
+        $renderer = new ReportRenderer();
         $auditor = new Auditor($bridge, $renderer);
 
         $result = $auditor->audit($job);
@@ -175,7 +179,7 @@ class AuditorTest extends TestCase
         $job = $this->createJob($dir);
 
         $bridge = new FakeBridgeClient();
-        $renderer = new StubReportRenderer();
+        $renderer = new ReportRenderer();
         $auditor = new Auditor($bridge, $renderer);
 
         $this->expectException(AuditCancelledException::class);

@@ -1,0 +1,75 @@
+{
+  "snapshot": {
+    "engineVersion": "0.3.1",
+    "capturedAt": "2026-10-15T15:45:00.123Z",
+    "disclaimer": "Laporan pengujian otomatis — AksaraNetra",
+    "source": {
+      "title": "Layanan Paspor Online — Ditjen Imigrasi",
+      "finalUrl": "https://imigrasi.go.id/paspor"
+    },
+    "summary": {
+      "beforeTotal": 12,
+      "afterTotal": 3,
+      "reductionPercent": 75
+    },
+    "counts": {
+      "fixed": 9
+    },
+    "warnings": {
+      "wcagRegressionClean": false,
+      "worsenedRules": [
+        {
+          "ruleId": "link-name",
+          "before": 2,
+          "after": 4,
+          "delta": 2,
+          "details": {
+            "tags": [
+              "wcag2a",
+              "wcag412"
+            ],
+            "affected": [
+              "a.download",
+              "a.help"
+            ]
+          }
+        },
+        {
+          "ruleId": "heading-order",
+          "before": 0,
+          "after": 1,
+          "delta": 1,
+          "details": {
+            "level": 3
+          }
+        }
+      ]
+    }
+  },
+  "report": {
+    "fixed": [
+      {
+        "rule": "image-alt",
+        "selector": "img.banner",
+        "status": "verified-fixed",
+        "confidence": 0.95
+      }
+    ],
+    "review": [
+      {
+        "rule": "label",
+        "selector": "input#nik",
+        "status": "needs-review",
+        "confidence": 0.7
+      }
+    ],
+    "rolledBackRecords": [
+      {
+        "rule": "color-contrast",
+        "selector": ".alert-warning",
+        "status": "rolled-back",
+        "confidence": 0.1
+      }
+    ]
+  }
+}

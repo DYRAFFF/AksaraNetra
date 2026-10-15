@@ -1,0 +1,42 @@
+{
+  "snapshot": {
+    "engineVersion": "1.0.0-beta<1>&\"test\"",
+    "capturedAt": "2026-10-15T12:30:00Z",
+    "disclaimer": "Peringatan: <b>HTML</b> & \"entitas\" harus di-escape > & <.",
+    "source": {
+      "title": "Kementerian Koordinator & BUMN <Nasional> \"Republik Indonesia\"",
+      "finalUrl": "https://bumn.go.id/search?q=tes&lang=id&filter=\"all\""
+    },
+    "summary": {
+      "beforeTotal": 0,
+      "afterTotal": 0,
+      "reductionPercent": 0
+    },
+    "counts": {
+      "fixed": 0
+    },
+    "warnings": {
+      "wcagRegressionClean": false,
+      "worsenedRules": [
+        {
+          "ruleId": "aria-allowed-attr",
+          "selector": "nav[role=\"navigation\"] > ul.menu",
+          "message": "Nilai \"aria-expanded\" & 'aria-haspopup' <invalid>.",
+          "delta": 1
+        }
+      ]
+    }
+  },
+  "report": {
+    "fixed": [],
+    "review": [],
+    "rolledBackRecords": [
+      {
+        "rule": "duplicate-id",
+        "selector": "#main-content > div[data-test=\"1 & 2 < 3\"]",
+        "status": "rolled-back",
+        "confidence": 0
+      }
+    ]
+  }
+}

@@ -170,6 +170,19 @@ class ApiTest extends TestCase
         $reader->assertHeader('X-Content-Type-Options', 'nosniff');
         $this->assertStringContainsString('Reader', file_get_contents($reader->getFile()->getPathname()));
 
+        // Download report.pdf artifact
+        $pdf = $this->get($resultData['links']['reportPdf'], [
+            'Origin' => 'https://frontend.test',
+        ]);
+        $pdf->assertStatus(200);
+        $pdf->assertHeader('Content-Type', 'application/pdf');
+        $pdfCacheControl = (string) $pdf->headers->get('Cache-Control');
+        $this->assertStringContainsString('private', $pdfCacheControl);
+        $this->assertStringContainsString('max-age=300', $pdfCacheControl);
+        $pdf->assertHeader('X-Content-Type-Options', 'nosniff');
+        $this->assertStringContainsString("default-src 'none'", (string) $pdf->headers->get('Content-Security-Policy'));
+        $this->assertSame('%PDF-test', file_get_contents($pdf->getFile()->getPathname()));
+
         // Artifact request without token returns 404
         $noToken = $this->get("/audits/{$job->id}/artifacts/reader", [
             'Origin' => 'https://frontend.test',
@@ -183,6 +196,54 @@ class ApiTest extends TestCase
         ]);
         $invalidToken->assertStatus(404);
         $this->assertSame('Artefak tidak ditemukan.', $invalidToken->json('message'));
+    }
+
+    public function test_artifact_route_serves_report_pdf_and_reproduces_report_html_fallback_quirk(): void
+    {
+        $response = $this->createJob();
+        $data = $response->json();
+        $job = $this->store->claimNext();
+        $this->assertNotNull($job);
+
+        mkdir($job->artifactDir, 0777, true);
+        // Simulate fallback where only report.html was generated (e.g. low memory) and NO report.pdf exists
+        file_put_contents($job->artifactDir . DIRECTORY_SEPARATOR . 'report.html', '<!doctype html><title>Report</title>');
+
+        $this->store->complete($job->id, [
+            'snapshot' => ['summary' => ['beforeTotal' => 1, 'afterTotal' => 0]],
+            'artifacts' => [
+                'reader' => 'reader.html',
+                'patched' => 'patched.html',
+                'reportPdf' => 'report.html', // Auditor recorded report.html as fallback
+                'screenshot' => 'after.png',
+            ],
+        ]);
+
+        $result = $this->get('/audits/' . $job->id . '/result', [
+            'Origin' => 'https://frontend.test',
+            'Authorization' => 'Bearer ' . $data['accessToken'],
+        ]);
+        $result->assertStatus(200);
+        $resultData = $result->json();
+
+        // The API result links strictly point to report.pdf regardless
+        $this->assertStringContainsString('/artifacts/report.pdf?token=', $resultData['links']['reportPdf']);
+
+        // Requesting report.pdf returns 404 because report.pdf does not exist on disk
+        $pdfResponse = $this->get($resultData['links']['reportPdf'], [
+            'Origin' => 'https://frontend.test',
+        ]);
+        $pdfResponse->assertStatus(404);
+        $this->assertSame('Artefak tidak ditemukan.', $pdfResponse->json('message'));
+
+        // Requesting report.html directly also returns 404 because report.html is not an allowed artifact definition
+        preg_match('/token=([^&]+)/', $resultData['links']['reportPdf'], $matches);
+        $shareToken = $matches[1] ?? '';
+        $htmlResponse = $this->get("/audits/{$job->id}/artifacts/report.html?token={$shareToken}", [
+            'Origin' => 'https://frontend.test',
+        ]);
+        $htmlResponse->assertStatus(404);
+        $this->assertSame('Artefak tidak ditemukan.', $htmlResponse->json('message'));
     }
 
     public function test_lets_user_explicitly_reuse_stored_result(): void

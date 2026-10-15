@@ -78,4 +78,13 @@ This file records specific quirks, edge cases, and design peculiarities identifi
   In Node, `sendArtifact()` sends `cache-control: max-age=300, private`. In Laravel / Symfony, `BinaryFileResponse` defaults to `public` unless `$response->setPrivate()` is explicitly called.
 - **Preservation rule**: `AuditArtifactController` invokes `$response->setPrivate()->setMaxAge(300)` to ensure byte-for-byte identical `Cache-Control: max-age=300, private` headers.
 
+---
+
+## 9. HTML Report JSON Regression Block Indentation
+- **Location**: `backend/src/report.mjs:21` vs `php-backend/app/Services/ReportRenderer.php`
+- **Quirk**:
+  Node's `renderAuditReport()` formats the WCAG regression block using `JSON.stringify(regression, null, 2)`, which produces JSON indented by exactly 2 spaces per level. PHP's built-in `json_encode(..., JSON_PRETTY_PRINT)` indents by 4 spaces per level by default without an indentation option.
+- **Preservation rule**: `ReportRenderer::stringifyRegression()` converts each 4-space indentation level to 2 spaces via regex callback and utilizes `JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE`, guaranteeing byte-for-byte identity with Node output.
+
+
 

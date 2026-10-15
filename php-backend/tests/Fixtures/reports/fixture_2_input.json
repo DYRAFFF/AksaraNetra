@@ -1,0 +1,22 @@
+{
+  "snapshot": {
+    "warnings": {
+      "wcagRegressionClean": false,
+      "worsenedRules": [
+        {
+          "ruleId": "color-contrast",
+          "before": 0,
+          "after": 2,
+          "delta": 2
+        },
+        {
+          "ruleId": "button-name",
+          "before": 1,
+          "after": 3,
+          "delta": 2
+        }
+      ]
+    }
+  },
+  "report": {}
+}
