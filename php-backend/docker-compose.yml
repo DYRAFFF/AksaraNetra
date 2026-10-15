@@ -1,0 +1,38 @@
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: php-backend/Dockerfile
+    container_name: aksaranetra-php-api
+    command: ["api"]
+    ports:
+      - "8787:8787"
+    env_file:
+      - .env
+    volumes:
+      - backend_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8787/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  worker:
+    build:
+      context: ..
+      dockerfile: php-backend/Dockerfile
+    container_name: aksaranetra-php-worker
+    command: ["worker"]
+    depends_on:
+      api:
+        condition: service_healthy
+    env_file:
+      - .env
+    volumes:
+      - backend_data:/data
+    restart: unless-stopped
+
+volumes:
+  backend_data:

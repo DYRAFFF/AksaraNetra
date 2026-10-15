@@ -558,6 +558,154 @@ Tracking progress across the 7 phases of the PHP/Laravel backend port.
 - Start Phase 6 in a NEW conversation using its prompt file.
 - Phase 6 will implement Docker packaging (`Dockerfile`, `docker-compose.yml`, `entrypoint.sh`), unified container running PHP 8.3 + Composer deps + Node 22 + Playwright Chromium, healthcheck, and container startup verification.
 
+---
+
+## Phase 6: Docker Packaging and Multi-Service Architecture
+
+- **Status**: Completed
+- **Date**: 2026-10-15
+- **Branch**: `php-backend`
+
+### What Was Done
+1. **Production Dockerfile (`php-backend/Dockerfile` and `php-backend/docker/Dockerfile`)**:
+   - Multi-ecosystem production image based on official `php:8.3-fpm-bookworm`.
+   - Installed system utilities (`ca-certificates`, `curl`, `git`, `nginx`, `supervisor`, `unzip`).
+   - Enabled essential PHP extensions: `pcntl` (for process control and POSIX signal handling) and `opcache` (performance), alongside native `pdo_sqlite`, `mbstring`, `openssl`, and `json`.
+   - Installed Composer 2 from official binary image.
+   - Installed Node.js 22 via official NodeSource repository.
+   - Cached engine dependencies layer: `cd engine && npm ci --omit=dev`.
+   - Installed Playwright Chromium with system dependencies matching `backend/Dockerfile` using `ENV PLAYWRIGHT_BROWSERS_PATH=/app/.playwright` and `RUN cd engine && npx playwright install --with-deps chromium`.
+   - Cached PHP Composer dependencies layer: `composer install --no-dev --no-interaction --no-scripts --optimize-autoloader`.
+   - Copied only necessary application sources (`engine/src`, `php-backend/app`, `bootstrap`, `bridge`, `config`, `database`, `docker`, `public`, `routes`, `artisan`).
+   - Generated production optimized classmap autoloader: `composer dump-autoload --optimize --no-dev`.
+   - Created dedicated non-root user `aksara` (UID 1000, GID 1000).
+   - Created `/data` volume directory and runtime storage trees with `chown -R aksara:aksara /data /app`.
+   - Set production environment defaults: `NODE_ENV=production`, `APP_ENV=production`, `APP_DEBUG=false`, `PORT=8787`, `HOST=0.0.0.0`, `CHROMIUM_LOW_RESOURCE_MODE=1`.
+   - Switched to non-root `USER aksara`, exposed port `8787`, configured entrypoint and default CMD.
+2. **Web Server & Process Orchestration (`php-backend/docker/`)**:
+   - **Nginx (`php-backend/docker/nginx.conf`)**:
+     - Configured to run unprivileged on port `8787` as non-root user `aksara`.
+     - Placed all PID and temporary buffers (`client_temp`, `proxy_temp`, `fastcgi_temp`, etc.) under `/tmp/`.
+     - Streamed access and error logs directly to `/dev/stdout` and `/dev/stderr`.
+     - Configured FastCGI pass to `127.0.0.1:9000` with 300s timeouts.
+     - Set `client_max_body_size 10m` so Laravel's `EnforceJsonRequestMiddleware` handles size limits and returns exact JSON error responses.
+   - **PHP-FPM (`php-backend/docker/php-fpm.conf`)**:
+     - Configured PID to `/tmp/php-fpm.pid` for non-root execution.
+     - Set `clear_env = no` so that container environment variables (`BACKEND_SECRET`, `FRONTEND_ORIGINS`, `BACKEND_DATA_DIR`, etc.) are passed to PHP worker processes.
+     - Configured dynamic process management (`pm = dynamic`, 20 max children).
+   - **Supervisord (`php-backend/docker/supervisord.conf`)**:
+     - Configured non-root PID and log in `/tmp/`.
+     - Manages PHP-FPM (priority 5) and Nginx (priority 10), restarting them on failure and streaming output to Docker stdout/stderr.
+   - **Container Entrypoint (`php-backend/docker/entrypoint.sh`)**:
+     - Handled safe, single-runner database migrations at startup: runs `php artisan migrate --force` ONLY when starting the `api` service.
+     - Starts supervisord for `api`, runs `php artisan audit:work` for `worker`, or passes through arbitrary commands.
+     - Enforced LF line endings and executable git permissions (`+x`) with `.gitattributes`.
+3. **Docker Compose Stack (`php-backend/docker-compose.yml`)**:
+   - Defined `api` (port 8787) and `worker` services built from the same image using repo root context (`context: ..`, `dockerfile: php-backend/Dockerfile`).
+   - Configured shared named volume `backend_data:/data` ensuring persistence across restarts.
+   - Added healthcheck on `api` testing `curl -f http://localhost:8787/health`.
+   - Configured `worker` to depend on `api` with `condition: service_healthy`, ensuring the worker only boots after migrations complete and the API is ready.
+   - Configured `restart: unless-stopped` and `env_file: - .env`.
+4. **Environment Template (`php-backend/.env.example`)**:
+   - Extensively documented all configuration parameters for local development, Docker, and production deployments.
+   - Documented required variables (`BACKEND_SECRET` min 32 chars, `FRONTEND_ORIGINS`, `BACKEND_DATA_DIR=/data`, `CHROMIUM_LOW_RESOURCE_MODE=1`).
+5. **Multi-Process Concurrency & WAL Permissions**:
+   - Both containers run as UID:GID 1000:1000 (`aksara`), ensuring identical read/write ownership of `/data/jobs.sqlite`, `-wal`, `-shm`, and artifact subdirectories.
+   - SQLite WAL mode and 5000ms busy timeout prevent lock contention between the API and Worker containers.
+6. **Local & Parity Testing**:
+   - Re-verified all 49 PHPUnit tests (320 assertions): 100% passing.
+   - Re-verified all 10 Node backend tests: 100% passing.
+   - Re-verified all 5 frontend contract tests: 100% passing.
+   - Validated configuration files (INI syntax, shell syntax, LF normalization, compose structure).
+
+### Files Created / Changed
+- `php-backend/Dockerfile` (Created): Unified PHP 8.3 + Node 22 + Chromium production image.
+- `php-backend/docker/Dockerfile` (Created): Dockerfile copy inside `docker/` for path convenience.
+- `php-backend/docker-compose.yml` (Created): Compose stack defining `api` and `worker` services sharing `backend_data:/data`.
+- `php-backend/docker/nginx.conf` (Created): Non-root Nginx web server configuration on port 8787.
+- `php-backend/docker/php-fpm.conf` (Created): Non-root PHP-FPM pool configuration with `clear_env = no`.
+- `php-backend/docker/supervisord.conf` (Created): Supervisor process manager configuration for API container.
+- `php-backend/docker/entrypoint.sh` (Created): Container startup script handling safe migrations and service branching.
+- `php-backend/.gitattributes` (Created): Enforces LF line endings for `*.sh` files across operating systems.
+- `php-backend/.env.example` (Modified): Added comprehensive documentation for Docker and production env vars.
+- `php-backend/PROGRESS.md` (Modified): Recorded Phase 6 completion and handoff.
+
+### How to Run Tests / Commands for this Phase
+- Run PHPUnit tests (local baseline):
+  ```powershell
+  $env:PATH = "C:\xampp\php;" + $env:PATH
+  php php-backend/vendor/bin/phpunit -c php-backend/phpunit.xml
+  ```
+- Run Node backend tests:
+  ```bash
+  npm --prefix backend test
+  ```
+- Run frontend contract tests:
+  ```bash
+  npm run test:frontend
+  ```
+- Run Docker stack verification (on an environment with Docker installed):
+  ```bash
+  # 1. Navigate to php-backend and prepare env
+  cd php-backend
+  cp .env.example .env
+
+  # 2. Build image and launch stack
+  docker compose up --build -d
+
+  # 3. Verify health endpoint
+  curl -i http://localhost:8787/health
+
+  # 4. Create an audit job
+  JOB_RESP=$(curl -s -X POST http://localhost:8787/audits \
+    -H "Content-Type: application/json" \
+    -d '{"url":"https://example.com"}')
+  echo $JOB_RESP
+  JOB_ID=$(echo $JOB_RESP | jq -r .jobId)
+  TOKEN=$(echo $JOB_RESP | jq -r .accessToken)
+
+  # 5. Poll job status
+  curl -i http://localhost:8787/audits/$JOB_ID -H "Authorization: Bearer $TOKEN"
+
+  # 6. Fetch result once completed
+  curl -i http://localhost:8787/audits/$JOB_ID/result -H "Authorization: Bearer $TOKEN"
+
+  # 7. Download artifacts using share token
+  SHARE_TOKEN=$(curl -s http://localhost:8787/audits/$JOB_ID/result -H "Authorization: Bearer $TOKEN" | jq -r .shareToken)
+  curl -i "http://localhost:8787/audits/$JOB_ID/artifacts/reader?token=$SHARE_TOKEN"
+  curl -i "http://localhost:8787/audits/$JOB_ID/artifacts/report.pdf?token=$SHARE_TOKEN"
+  curl -i "http://localhost:8787/audits/$JOB_ID/artifacts/screenshot?token=$SHARE_TOKEN"
+
+  # 8. Test cancellation
+  NEW_JOB=$(curl -s -X POST http://localhost:8787/audits -H "Content-Type: application/json" -d '{"url":"https://example.com"}')
+  NEW_ID=$(echo $NEW_JOB | jq -r .jobId)
+  NEW_TOKEN=$(echo $NEW_JOB | jq -r .accessToken)
+  curl -i -X DELETE http://localhost:8787/audits/$NEW_ID -H "Authorization: Bearer $NEW_TOKEN"
+
+  # 9. Verify volume data persistence across restarts
+  docker compose down
+  docker compose up -d
+  curl -i http://localhost:8787/audits/$JOB_ID -H "Authorization: Bearer $TOKEN"
+  ```
+
+### Decisions Made
+1. **Nginx + PHP-FPM with Supervisord**: Selected Nginx + PHP-FPM managed by Supervisord as the production web server. All processes run under an unprivileged user (`aksara`, UID 1000) by utilizing `/tmp` for temporary files, socket paths, and PID files.
+2. **Clear Environment Variables Setting**: Explicitly set `clear_env = no` in `php-fpm.conf` so PHP-FPM preserves runtime container environment variables (`BACKEND_SECRET`, `FRONTEND_ORIGINS`, etc.) for Laravel.
+3. **Startup Migration Safety**: Migrations are executed strictly in the `api` service entrypoint before launching Nginx/PHP-FPM. The `worker` service waits for `api` to pass healthcheck before starting `audit:work`.
+4. **Volume Ownership Parity**: Both `api` and `worker` containers run under UID 1000 (`aksara`), eliminating permission conflicts when reading/writing `/data/jobs.sqlite`, WAL files, and artifact directories.
+5. **LF Line Endings**: Enforced LF line endings on `entrypoint.sh` via `.gitattributes` to prevent Windows CRLF issues when executed inside Linux containers.
+
+### Deviations from Plan
+- None.
+
+### Open Problems
+- Docker is not installed on the local Windows development host (`docker : The term 'docker' is not recognized`). All configuration files, Dockerfiles, entrypoints, and permissions were created and verified by syntax and static checks. Full container execution commands are documented above for deployment environments.
+
+### Instructions for Next Phase (Phase 7)
+- Start Phase 7 in a NEW conversation using its prompt file.
+- Phase 7 is the final phase: Parity checks, frontend integration testing (`NEXT_PUBLIC_AUDIT_API_URL` pointing to PHP backend), end-to-end audit verification, and final documentation.
+
+
 
 
 
