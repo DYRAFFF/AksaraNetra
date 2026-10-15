@@ -334,5 +334,141 @@ Tracking progress across the 7 phases of the PHP/Laravel backend port.
   3. The PHP Report Renderer (`App\Services\ReportRenderer`) porting `backend/src/report.mjs` with byte-identical HTML output.
   4. Unit and feature tests verifying auditor execution and report rendering parity.
 
+---
+
+## Phase 4: Bridge, Auditor, and Worker
+
+- **Status**: Completed
+- **Date**: 2026-10-15
+- **Branch**: `php-backend`
+
+### What Was Done
+1. **Node Bridge Subcommands (`audit` and `render-pdf`)**:
+   - Implemented `audit` subcommand in `php-backend/bridge/audit-cli.mjs`:
+     - Reads `{ id, url, artifactDir }` as JSON from `process.stdin`.
+     - Invokes engine's `auditUrl` from `../../engine/src/api/index.mjs` by relative import without copying or rewriting engine logic.
+     - Emits streaming NDJSON lines on stdout: `{"type":"progress","progress":N,"stage":"..."}`, followed by `{"type":"result","snapshot":...,"files":...}` or `{"type":"error","code":...,"stage":...,"message":...}`.
+     - Handles graceful abort on `SIGTERM` / `SIGINT` via `AbortController` passed as `signal`.
+   - Implemented `render-pdf` subcommand in `php-backend/bridge/audit-cli.mjs`:
+     - Reads `<htmlPath> <outPath>` CLI arguments, loads HTML, and invokes engine's `renderPdf` from `../../engine/src/runner/index.mjs`.
+     - Emits `{"ok":true,"path":"..."}` on stdout with zero exit code, or error output on failure.
+     - Dynamically imports runner modules only when needed to maintain high performance in CLI commands.
+2. **BridgeClient & Exceptions**:
+   - Extended `BridgeClientInterface` and `BridgeClient` to support `audit()` and `renderPdf()`.
+   - Streamed NDJSON lines via chunked output parsing callback and mapped progress updates to database.
+   - Polled `$shouldCancel` closure every 500ms to terminate child process via `$process->stop()` on cancellation or timeout.
+   - Created custom exception classes: `AuditFailedException` (with `errorCode` and `stage`), `AuditCancelledException`, and `AuditTimeoutException`.
+3. **Auditor Service & Report Renderer Interface**:
+   - Implemented `App\Services\AuditorInterface` and `App\Services\Auditor` porting `backend/src/auditor.mjs`:
+     - Directory initialization.
+     - Checkpoint 1: detects `snapshot.json` and `engine-result.json`, emits stage 95 ("Memulihkan hasil audit dari checkpoint tersimpan"), and skips browser audit re-execution.
+     - Progress stages 96 ("Menyiapkan laporan hasil") and 99 ("Memfinalisasi hasil").
+     - Report HTML generation behind `ReportRendererInterface` (`StubReportRenderer` placeholder for Phase 4, with full implementation scheduled for Phase 5).
+     - PDF generation via bridge `render-pdf`, with low-resource skip fallback logging warning and falling back to `report.html`.
+     - Returns `{snapshot, artifacts: {reader, patched, reportPdf, screenshot}}`.
+4. **Audit Worker & Artisan Console Commands**:
+   - Implemented `App\Services\AuditWorker`:
+     - Concurrency 1.
+     - Atomic claiming in SQLite transaction (`JobStore::claimNext()`).
+     - Crash recovery on startup (`JobStore::recoverInterrupted()`).
+     - Timeout detection enforcing `AUDIT_TIMEOUT_MS`, failing with `audit-timeout` and deleting partial artifacts.
+     - Cancellation handling (both in-process and cross-process via database polling), aborting child process, marking status `cancelled`, and deleting partial artifacts.
+     - Transient error retries (`dns-lookup-failed`, `robots-fetch-failed`, `browser-failed`, `audit-failed`) while `attempts < 2`.
+     - Permanent failure handling and artifact cleanup.
+   - Created `php artisan audit:work` (`App\Console\Commands\AuditWorkCommand`):
+     - Recovers interrupted jobs at boot.
+     - Configures POSIX signal handlers (`SIGINT`, `SIGTERM`).
+     - Executes periodic cleanup every `CLEANUP_INTERVAL_MS`.
+     - Processes queue sequentially and sleeps when idle. Supports `--once` flag.
+   - Created `php artisan audit:cleanup` (`App\Console\Commands\AuditCleanupCommand`):
+     - Deletes expired jobs and their artifact directories.
+5. **Testing & End-to-End Verification**:
+   - Implemented `Tests\Fakes\FakeAuditor` and enhanced `FakeBridgeClient`.
+   - Implemented `Tests\Feature\WorkerTest` with 6 tests:
+     - `test_runs_only_one_audit_at_a_time` (concurrency 1 verification).
+     - `test_retries_one_transient_failure_and_then_succeeds` (attempts incremented to 2, status completed).
+     - `test_cancels_a_running_audit_and_removes_partial_artifacts` (status cancelled, partial artifacts purged).
+     - `test_fails_with_audit_timeout_and_removes_partial_artifacts` (code `audit-timeout`, partial artifacts purged).
+     - `test_fails_permanently_on_second_transient_failure` (fails after 2 attempts).
+     - `test_fails_immediately_on_non_transient_error` (fails immediately without retry).
+   - Implemented `Tests\Feature\AuditorTest` with 4 tests:
+     - `test_auditor_runs_full_lifecycle_and_generates_artifacts`.
+     - `test_auditor_resumes_from_checkpoint_without_calling_bridge_audit`.
+     - `test_auditor_handles_pdf_fallback_gracefully`.
+     - `test_auditor_aborts_when_cancellation_signaled`.
+   - Ran all 43 PHPUnit tests (257 assertions): 100% passing.
+   - Ran 10 Node backend tests: 100% passing.
+   - Ran 5 frontend contract tests: 100% passing.
+   - Verified real end-to-end audit with live Chromium against `https://example.com/`:
+     - Claimed from SQLite by PHP worker.
+     - Executed via Node bridge `audit-cli.mjs audit`.
+     - Progress streamed from 2% to 94%, then 96% and 99%.
+     - Produced all 11 artifact files (`snapshot.json`, `engine-result.json`, `reader.html`, `patched.html`, `report.html`, `report.pdf`, `after.png`, axe scans, aria snapshot).
+     - Completed successfully with progress 100 and stage "Audit selesai".
+
+### Files Created / Changed
+- `php-backend/bridge/audit-cli.mjs` (Modified): Added `audit` and `render-pdf` subcommands with SIGTERM abort support.
+- `php-backend/app/Exceptions/AuditFailedException.php` (Created): Exception with `errorCode` and `stage`.
+- `php-backend/app/Exceptions/AuditCancelledException.php` (Created): Exception for audit cancellation.
+- `php-backend/app/Exceptions/AuditTimeoutException.php` (Created): Exception for audit timeout.
+- `php-backend/app/Services/BridgeClientInterface.php` (Modified): Added `audit()` and `renderPdf()`.
+- `php-backend/app/Services/BridgeClient.php` (Modified): Implemented `audit()` and `renderPdf()` with NDJSON parsing and cancellation checks.
+- `php-backend/app/Services/ReportRendererInterface.php` (Created): Interface for report HTML generation.
+- `php-backend/app/Services/StubReportRenderer.php` (Created): Phase 4 placeholder renderer.
+- `php-backend/app/Services/AuditorInterface.php` (Created): Interface for auditor service.
+- `php-backend/app/Services/Auditor.php` (Created): Port of `backend/src/auditor.mjs` with checkpoint resume, progress stages, and PDF fallback.
+- `php-backend/app/Services/AuditWorkerInterface.php` (Modified): Full worker contract with `processNext()`, `drain()`, `recover()`, `stop()`.
+- `php-backend/app/Services/AuditWorker.php` (Modified): Full worker service mirroring `backend/src/worker.mjs` with atomic claiming, timeout, retries, cancellation, and artifact cleanup.
+- `php-backend/app/Services/JobStore.php` (Modified): Updated `recoverInterrupted()` to return integer count of recovered jobs.
+- `php-backend/app/Console/Commands/AuditWorkCommand.php` (Created): `audit:work` console command.
+- `php-backend/app/Console/Commands/AuditCleanupCommand.php` (Created): `audit:cleanup` console command.
+- `php-backend/app/Providers/AppServiceProvider.php` (Modified): Registered Auditor, ReportRenderer, and Worker container singletons.
+- `php-backend/tests/Fakes/FakeBridgeClient.php` (Modified): Added `audit()` and `renderPdf()` test stubs.
+- `php-backend/tests/Fakes/FakeAuditor.php` (Created): Fake auditor test double for Chromium-free testing.
+- `php-backend/tests/Fakes/FakeAuditWorker.php` (Modified): Updated to implement full `AuditWorkerInterface`.
+- `php-backend/tests/Feature/WorkerTest.php` (Created): 6 feature tests ported from `backend/tests/worker.test.mjs`.
+- `php-backend/tests/Feature/AuditorTest.php` (Created): 4 feature tests for checkpoint resume, PDF fallback, and artifacts.
+- `php-backend/PROGRESS.md` (Updated): Recorded Phase 4 completion.
+
+### How to Run Tests / Commands for this Phase
+- Run PHPUnit tests:
+  ```powershell
+  $env:PATH = "C:\xampp\php;" + $env:PATH
+  php php-backend/vendor/bin/phpunit -c php-backend/phpunit.xml
+  ```
+- Run Artisan worker (single job mode):
+  ```powershell
+  php php-backend/artisan audit:work --once
+  ```
+- Run Artisan cleanup:
+  ```powershell
+  php php-backend/artisan audit:cleanup
+  ```
+- Run Node backend tests (verify baseline unchanged):
+  ```bash
+  npm --prefix backend test
+  ```
+- Run frontend contract tests:
+  ```bash
+  npm run test:frontend
+  ```
+
+### Decisions Made
+1. **Dynamic Module Import in Node Bridge**: Imported `engine/src/api/index.mjs` and `engine/src/runner/index.mjs` dynamically inside their respective subcommands (`command === "audit"` and `command === "render-pdf"`) so that lightweight subcommands like `check-url` do not incur Playwright startup overhead.
+2. **Container-Independent Directory Removal**: Used pure PHP recursive filesystem operations in `AuditWorker` rather than Laravel's `File` facade, allowing worker unit and feature tests to execute cleanly without booting the entire Laravel framework container.
+3. **ReportRenderer Interface & Stub**: Implemented `ReportRendererInterface` and provided `StubReportRenderer` as specified for Phase 4, keeping the Auditor fully testable and functional while deferring byte-identical HTML rendering to Phase 5.
+4. **Typed Error Code Property**: Defined `errorCode: string` on `AuditFailedException` to prevent collisions with PHP's internal `Exception::$code` integer property.
+
+### Deviations from Plan
+- None. Everything implemented matches `php-backend/PLAN.md` and Phase 4 specifications.
+
+### Open Problems
+- None.
+
+### Instructions for Next Phase (Phase 5)
+- Start Phase 5 in a NEW conversation using its prompt file.
+- Phase 5 will implement the byte-identical HTML report renderer (`App\Services\ReportRenderer`) porting `backend/src/report.mjs`, and verify exact byte parity against Node `renderAuditReport()`.
+
+
 
 

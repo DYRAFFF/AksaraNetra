@@ -95,10 +95,10 @@ class JobStore
         CREATE INDEX IF NOT EXISTS audit_jobs_expiry_idx ON audit_jobs(expires_at);");
     }
 
-    public function recoverInterrupted(): void
+    public function recoverInterrupted(): int
     {
         if ($this->pdo === null) {
-            return;
+            return 0;
         }
 
         $now = ($this->now)();
@@ -140,6 +140,8 @@ class JobStore
                 $update->execute([$now, $now, $job['id']]);
             }
         }
+
+        return count($runningJobs);
     }
 
     public function createJob(array|object $job): ?AuditJob
