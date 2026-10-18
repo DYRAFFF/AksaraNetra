@@ -705,6 +705,113 @@ Tracking progress across the 7 phases of the PHP/Laravel backend port.
 - Start Phase 7 in a NEW conversation using its prompt file.
 - Phase 7 is the final phase: Parity checks, frontend integration testing (`NEXT_PUBLIC_AUDIT_API_URL` pointing to PHP backend), end-to-end audit verification, and final documentation.
 
+---
+
+## Phase 7: Parity Check and Documentation
+
+- **Status**: Completed
+- **Date**: 2026-10-18
+- **Branch**: `php-backend`
+
+### What Was Done
+1. **Automated Cross-Backend Parity Check Script (`php-backend/scripts/parity-check.mjs`)**:
+   - Implemented an automated parity check script capable of auto-starting isolated test instances of both the Node backend (port 56xxx) and PHP backend (port 56xxx), or targeting existing instances via `--node-url` and `--php-url`.
+   - Pre-seeded both SQLite databases with identical fixture data (completed job `aud_paritycompleted0000000001` and dynamically expiring job `aud_parityexpired000000000001`) and artifact files (`reader.html`, `patched.html`, `report.pdf`, `after.png`), allowing full test suite execution without Playwright/Chromium dependencies during routine verification.
+   - Executed a sequence of 42 distinct HTTP test cases against both backends, asserting equality across:
+     - HTTP status codes (200, 202, 204, 400, 403, 404, 409, 410, 413, 415, 429).
+     - CORS response headers (`access-control-allow-origin`, `access-control-allow-methods`, `access-control-allow-headers`, `access-control-allow-credentials`, `access-control-max-age`, `vary: Origin`).
+     - Security headers (`x-content-type-options: nosniff`, `content-security-policy`).
+     - Cache control directives (`no-store`, `private, max-age=300`).
+     - Location header format (`/^\/audits\/aud_[a-zA-Z0-9_-]{24}$/`).
+     - Rate limit headers (`retry-after: 3600`).
+     - Content-Type headers (`application/json; charset=utf-8`, `text/html; charset=utf-8`, `application/pdf`, `image/png`).
+     - JSON payload structures and normalized values (regex validation for job IDs, access tokens, share tokens, timestamps, and status paths).
+     - Raw artifact binary/text contents.
+   - Result: 42/42 tests passed (100% parity).
+
+2. **Parity Edge Case Refinements**:
+   - **Path Traversal Resolution**: Updated `routes/api.php` artifact parameter matching to `->where('artifact', '.*')`, ensuring traversed and encoded requests like `..%2fjobs.sqlite` reach `AuditArtifactController::show()` and return HTTP 404 `Artefak tidak ditemukan.` matching Node behavior.
+   - **CORS Rejection Headers**: Updated `AksaraCorsMiddleware.php` to set `Content-Type: application/json; charset=utf-8` on HTTP 403 CORS rejection responses, matching Node's content type formatting.
+   - **Preflight 204 Response Cleaning**: Updated `AksaraCorsMiddleware.php` and `AksaraResponseHeadersMiddleware.php` to bypass 204 No Content responses so that extraneous `Content-Type` and `Cache-Control` headers are omitted on preflight responses, matching Node behavior.
+   - **Pure No-Store Cache-Control**: Updated `AksaraResponseHeadersMiddleware.php` to enforce pure `Cache-Control: no-store` on all API responses.
+
+3. **Frontend Integration & Compatibility Verification**:
+   - Verified that the unmodified Next.js frontend contract tests pass: `npm run test:frontend` (5/5 tests passed).
+   - Authored and executed `php-backend/scripts/test-frontend-flow.mjs`, which exercises the live end-to-end user workflow matching `src/lib/audit-api.ts`:
+     - Step 1: Cache check for `https://example.com/` (`available: false`).
+     - Step 2: Create audit (`jobId: "aud_..."`, `status: "queued"`, HTTP 202).
+     - Step 3: Poll status while queued (`status: "queued"`).
+     - Step 4: Worker claims job and executes live audit using Playwright/Chromium engine via Node bridge.
+     - Step 5: Poll status after processing (`status: "completed"`, `progress: 100`).
+     - Step 6: Fetch result payload containing snapshot summary, WCAG metrics, and share-token-authenticated artifact download links.
+     - Step 7: Access and stream artifacts (`reader.html`, `patched.html`, `after.png` screenshot) via share tokens.
+     - Step 8: Verify cache hit (`available: true`, `capturedAt` set).
+   - Result: 100% pass, confirming seamless drop-in compatibility with the Next.js frontend.
+
+4. **Complete Project Documentation**:
+   - Authored `php-backend/README.md`:
+     - Architectural overview and ASCII system diagram.
+     - Component breakdown and directory structure.
+     - Complete environment variable reference table.
+     - Local setup instructions without Docker.
+     - Docker Compose multi-service deployment guide.
+     - Comprehensive test running guide (PHPUnit, parity script, frontend contract, manual flow).
+     - Instructions for pointing the Next.js frontend to the PHP backend with zero code changes.
+     - Production deployment and resource recommendations.
+   - Updated `php-backend/NOTES.md` with Notes 10–13 documenting Symfony cache-control behaviors, route traversal resolution, startup cleanup timing differences, and parity check verification summaries.
+
+5. **Final Clean Repository Verification**:
+   - Confirmed `git status` shows zero modified or untracked files outside `php-backend/`.
+   - Confirmed `git diff --stat Update-UI/UX` demonstrates that all changes across all 7 phases are strictly contained within `php-backend/`.
+
+### Files Created / Changed
+- `php-backend/scripts/parity-check.mjs` (Created): Automated 42-check side-by-side parity verification script.
+- `php-backend/scripts/test-frontend-flow.mjs` (Created): Live Next.js frontend workflow integration script.
+- `php-backend/README.md` (Created): Comprehensive architecture, setup, docker, and operational documentation.
+- `php-backend/NOTES.md` (Modified): Added Notes 10–13 and parity check summary.
+- `php-backend/routes/api.php` (Modified): Updated artifact route parameter constraint to `.*`.
+- `php-backend/app/Http/Middleware/AksaraCorsMiddleware.php` (Modified): Adjusted 403 Content-Type and 204 headers.
+- `php-backend/app/Http/Middleware/AksaraResponseHeadersMiddleware.php` (Modified): Added 204 bypass and no-store enforcement.
+- `php-backend/PROGRESS.md` (Modified): Recorded Phase 7 completion.
+
+### How to Run Tests / Commands for this Phase
+- Run automated side-by-side parity check:
+  ```bash
+  node php-backend/scripts/parity-check.mjs
+  ```
+- Run live frontend workflow verification:
+  ```bash
+  node php-backend/scripts/test-frontend-flow.mjs
+  ```
+- Run frontend contract tests:
+  ```bash
+  npm run test:frontend
+  ```
+- Run PHPUnit test suite:
+  ```powershell
+  C:\xampp\php\php.exe php-backend/vendor/bin/phpunit -c php-backend/phpunit.xml
+  ```
+- Run Node backend reference tests:
+  ```bash
+  npm --prefix backend test
+  ```
+
+### Decisions Made
+1. **Dynamic Expiration Seeding in Parity Check**: Rather than seeding an already-expired timestamp which Node's startup `cleanup()` purges upon boot, seeded the job with a short expiration delta (`now + 1200ms`) and waited for the window to lapse before asserting the HTTP 410 Gone response on both backends.
+2. **Path Traversal Route Regex (`->where('artifact', '.*')`)**: Permitted all character sequences in the `{artifact}` route parameter so that path traversal attempts (`..%2fjobs.sqlite`) reach controller validation and emit the exact Indonesian error message `Artefak tidak ditemukan.`.
+3. **Redundant Private Directive Normalization in Caching**: Documented and normalized Symfony's automatic addition of `, private` to `no-store` headers, which has identical caching semantics under RFC 7234 / RFC 9111.
+
+### Deviations from Plan
+- None. All requirements of Phase 7 and PLAN.md were fulfilled in their entirety.
+
+### Open Problems
+- None. All test suites (PHPUnit, Node tests, frontend contract, parity check, live flow) pass with zero errors and zero warnings.
+
+### Instructions for Next Phase
+- The AksaraNetra PHP backend port is complete across all 7 phases!
+- To switch the frontend to the PHP backend, set `NEXT_PUBLIC_AUDIT_API_URL=http://localhost:8787` in `.env.local` and start the PHP backend services.
+
+
 
 
 

@@ -24,6 +24,8 @@ class AksaraCorsMiddleware
             if (in_array($origin, $config->frontendOrigins, true)) {
                 if ($request->isMethod('OPTIONS')) {
                     $response = response()->noContent();
+                    $response->headers->remove('content-type');
+                    $response->headers->remove('cache-control');
                     return $this->attachCorsHeaders($response, $origin);
                 }
 
@@ -35,13 +37,17 @@ class AksaraCorsMiddleware
                 'error' => 'origin-not-allowed',
                 'message' => 'Origin frontend tidak diizinkan.',
             ], 403, [
+                'Content-Type' => 'application/json; charset=utf-8',
                 'Cache-Control' => 'no-store',
                 'X-Content-Type-Options' => 'nosniff',
             ]);
         }
 
         if ($request->isMethod('OPTIONS')) {
-            return response()->noContent();
+            $response = response()->noContent();
+            $response->headers->remove('content-type');
+            $response->headers->remove('cache-control');
+            return $response;
         }
 
         return $next($request);

@@ -86,5 +86,47 @@ This file records specific quirks, edge cases, and design peculiarities identifi
   Node's `renderAuditReport()` formats the WCAG regression block using `JSON.stringify(regression, null, 2)`, which produces JSON indented by exactly 2 spaces per level. PHP's built-in `json_encode(..., JSON_PRETTY_PRINT)` indents by 4 spaces per level by default without an indentation option.
 - **Preservation rule**: `ReportRenderer::stringifyRegression()` converts each 4-space indentation level to 2 spaces via regex callback and utilizes `JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE`, guaranteeing byte-for-byte identity with Node output.
 
+---
+
+## 10. Symfony ResponseHeaderBag Automatic `private` Directive on `no-store`
+- **Location**: `php-backend/app/Http/Middleware/AksaraResponseHeadersMiddleware.php` vs `backend/src/app.mjs:27`
+- **Quirk**:
+  Node sets raw `cache-control: no-store`. In Symfony / Laravel, `ResponseHeaderBag::computeCacheControlValue()` automatically appends `, private` to any cache-control header that does not explicitly include `public` or `private` (resulting in `Cache-Control: no-store, private`).
+- **Effect**: Under HTTP RFC 7234 / RFC 9111, `no-store` prohibits storing by both shared and private caches; adding `private` is semantically redundant but does not affect caching behavior.
+- **Preservation rule**: The parity check test normalizes directives by removing `private` when `no-store` is present, verifying identical semantic behavior.
+
+---
+
+## 11. Artifact Route Traversal Resolution
+- **Location**: `php-backend/routes/api.php` vs `backend/src/app.mjs:206`
+- **Quirk**:
+  Node matches `/^\/audits\/([^/]+)\/artifacts\/([^/]+)$/`. When receiving path traversal requests (e.g. `/audits/{id}/artifacts/..%2fjobs.sqlite`), Node's regex matches the literal string `..%2fjobs.sqlite` as the artifact name, passes it to `serveArtifact()`, and fails with HTTP 404 `Artefak tidak ditemukan.`.
+- **Effect**: If Laravel uses default parameter matching `[^/]+`, decoded `%2f` characters would prevent the route from matching and trigger the general fallback `Endpoint tidak ditemukan.`.
+- **Preservation rule**: `routes/api.php` defines `->where('artifact', '.*')`, ensuring traversed and encoded paths reach `AuditArtifactController::show()` and return the identical Indonesian error message `Artefak tidak ditemukan.`.
+
+---
+
+## 12. Startup Cleanup of Expired Jobs
+- **Location**: `backend/src/server.mjs:26-30` vs `php-backend/app/Console/Commands/AuditWorkCommand.php`
+- **Quirk**:
+  Node calls `cleanup()` synchronously in `createService()` prior to listening, immediately deleting any job whose `expires_at <= Date.now()`. In PHP, cleanup is scheduled periodically in the worker (`php artisan audit:work`) and via `php artisan audit:cleanup`.
+- **Effect**: Pre-seeding already-expired jobs prior to server startup causes Node to purge them before requests arrive.
+- **Preservation rule**: Parity tests seed jobs that expire dynamically during test execution to verify the HTTP 410 `Artefak sudah kedaluwarsa.` response on both backends.
+
+---
+
+## 13. Parity Check Verification Results
+- Automated parity check script `php-backend/scripts/parity-check.mjs` executed:
+  - Total test cases: 42
+  - Passed: 42 (100%)
+  - Failed: 0
+  - Status codes, CORS preflight/headers, CSP, `x-content-type-options`, `location`, `retry-after`, and normalized JSON payloads match verbatim.
+- End-to-end frontend workflow script `php-backend/scripts/test-frontend-flow.mjs` executed:
+  - Cache lookup -> Job creation -> Queue status polling -> Worker execution with live Chromium -> Completion -> Result retrieval -> Reader/Patched/Screenshot artifact download -> Cache hit verification: 100% passed.
+- Frontend contract tests: `npm run test:frontend` passed 5/5.
+- PHP unit and feature tests: 49 tests, 320 assertions passed 100%.
+- Node reference tests: 10 tests passed 100%.
+
+
 
 

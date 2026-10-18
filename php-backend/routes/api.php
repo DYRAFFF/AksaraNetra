@@ -15,7 +15,7 @@ Route::get('/audits/cache', [AuditCacheController::class, 'show']);
 Route::post('/audits', [AuditController::class, 'store']);
 
 Route::get('/audits/{id}/artifacts/{artifact}', [AuditArtifactController::class, 'show'])
-    ->where('artifact', '[^/]+');
+    ->where('artifact', '.*');
 
 Route::get('/audits/{id}/result', [AuditResultController::class, 'show']);
 

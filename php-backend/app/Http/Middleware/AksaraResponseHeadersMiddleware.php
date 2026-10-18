@@ -14,14 +14,20 @@ class AksaraResponseHeadersMiddleware
     {
         $response = $next($request);
 
+        if ($response->getStatusCode() === 204) {
+            return $response;
+        }
+
         $response->headers->set('x-content-type-options', 'nosniff');
 
+        $contentType = (string) $response->headers->get('content-type', '');
+        if (str_starts_with(strtolower($contentType), 'application/json')) {
+            $response->headers->set('content-type', 'application/json; charset=utf-8');
+        }
+
         $cacheControl = (string) $response->headers->get('cache-control', '');
-        // Default Laravel responses set 'no-cache, private'. For standard API responses, enforce pure 'no-store'.
-        if ($cacheControl === '' || $cacheControl === 'no-cache, private' || $cacheControl === 'no-store, private') {
-            $response->headers->removeCacheControlDirective('private');
-            $response->headers->removeCacheControlDirective('no-cache');
-            $response->headers->addCacheControlDirective('no-store', true);
+        if ($cacheControl === '' || str_contains($cacheControl, 'no-cache') || str_contains($cacheControl, 'no-store')) {
+            $response->headers->set('Cache-Control', 'no-store');
         }
 
         return $response;
