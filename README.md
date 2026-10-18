@@ -1,4 +1,4 @@
-# AksaraNetra ♿🇮🇩
+# AksaraNetra
 
 Platform audit aksesibilitas web terstandarisasi untuk regulasi Indonesia (UU No. 8/2016, Permen Kominfo No. 8/2021) dan kepatuhan global **WCAG 2.1 Level AA**.
 
