@@ -42,7 +42,7 @@ export function Feature1() {
           transition={{ delay: 1.7, type: "spring" }}
         >
           <Code className={styles.f1CodeIcon} />
-          aria-label="Thumbnail"
+          {'aria-label="Thumbnail"'}
         </motion.div>
       </div>
 

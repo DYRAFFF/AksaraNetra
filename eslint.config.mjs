@@ -23,6 +23,10 @@ const eslintConfig = defineConfig([
     // peringatan yang tidak ada hubungannya dengan aplikasi web.
     "engine/**",
 
+    // Backend punya ekosistem dan linter sendiri (PHP/Laravel & Node test)
+    "backend/**",
+    "php-backend/**",
+
     // Hasil audit adalah data, bukan kode.
     "public/data/**",
   ]),
