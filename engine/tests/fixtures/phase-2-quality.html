@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8">
+    <title>Fixture Uji Kualitas Fase 2</title>
+    <style>
+      .icon-btn, .icon-link {
+        display: inline-flex;
+        width: 44px;
+        height: 44px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <!-- Kasus 1: Disambiguasi nama kembar pada kontainer berbeda -->
+      <section class="section-gallery">
+        <h2>Galeri Foto</h2>
+        <button class="btn-gallery-prev absolute left-2 top-1/2">
+          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M15 19l-7-7 7-7" /></svg>
+        </button>
+      </section>
+
+      <section class="section-news">
+        <h2>Berita Terkini</h2>
+        <button class="btn-news-prev absolute left-2 top-1/2">
+          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M15 19l-7-7 7-7" /></svg>
+        </button>
+      </section>
+
+      <!-- Kasus 2: Multi-sinyal tautan -->
+      <!-- A. Inline SVG dengan title -->
+      <a class="link-svg-title icon-link" href="https://example.com/svg-target">
+        <svg aria-hidden="true" viewBox="0 0 24 24">
+          <title>Portal Pengaduan Warga</title>
+          <path d="M12 2L2 7l10 5 10-5-10-5z" />
+        </svg>
+      </a>
+
+      <!-- B. Tooltip data-original-title -->
+      <a class="link-tooltip icon-link" href="https://example.com/doc" data-original-title="Unduh Dokumen Publik">
+        <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /></svg>
+      </a>
+
+      <!-- C. Informative slug -->
+      <a class="link-info-slug icon-link" href="/layanan-publik">
+        <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /></svg>
+      </a>
+
+      <!-- D. Technical slug -->
+      <a class="link-tech-slug icon-link" href="/item/detail">
+        <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /></svg>
+      </a>
+
+      <!-- Kasus 3: Target dengan kelas duplikat untuk uji fingerprinting -->
+      <div class="card-group">
+        <div class="user-card" id="card-alpha">
+          <button class="dup-action" role="button" data-kind="primary">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M0 0h24v24H0z" /></svg>
+          </button>
+        </div>
+        <div class="user-card" id="card-beta">
+          <button class="dup-action" role="button" data-kind="secondary">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M0 0h24v24H0z" /></svg>
+          </button>
+        </div>
+      </div>
+    </main>
+  </body>
+</html>

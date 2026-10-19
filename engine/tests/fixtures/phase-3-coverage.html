@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8">
+    <title>Fixture Cakupan Dunia Nyata Fase 3</title>
+    <style>
+      body { margin: 0; min-height: 2500px; }
+      .modal-dialog { position: fixed; top: 20%; left: 30%; width: 300px; padding: 20px; background: white; z-index: 1000; }
+      .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 999; }
+      .cookie-banner { position: fixed; bottom: 0; left: 0; right: 0; background: #eee; padding: 15px; z-index: 990; }
+    </style>
+  </head>
+  <body>
+    <!-- Modal Popup Pengumuman yang aktif saat halaman dimuat -->
+    <div class="modal-backdrop"></div>
+    <div class="modal-dialog" id="announcement-modal">
+      <h3>Pengumuman Penting</h3>
+      <p>Seleksi Calon Pegawai Negeri Sipil Tahun Ini Dibuka.</p>
+      <button class="btn-close" aria-label="Tutup pengumuman">Tutup</button>
+    </div>
+
+    <!-- Cookie Consent Banner -->
+    <div class="cookie-banner" id="cookie-banner">
+      <p>Situs ini menggunakan cookie untuk pengalaman navigasi yang lebih baik.</p>
+      <button class="cookie-consent-accept">Saya Setuju</button>
+    </div>
+
+    <main id="main-content">
+      <h1>Portal Layanan Terpadu</h1>
+
+      <!-- Kontrol dengan token aksara & camelCase untuk uji Unicode -->
+      <button id="layananDaerahSulawesi" class="icon-btn">
+        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M0 0h24v24H0z" /></svg>
+      </button>
+
+      <!-- Frame interaktif untuk simulasi nested iframe target -->
+      <iframe id="portal-map" src="about:blank" title="Peta Interaktif Layanan"></iframe>
+    </main>
+  </body>
+</html>

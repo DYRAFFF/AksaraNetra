@@ -10,36 +10,15 @@
  * Keputusannya dipisah ke decideRequest supaya bisa diuji tanpa browser.
  * attachGuard hanya pembungkus tipis di atasnya.
  *
- * RISIKO SISA YANG BELUM TERATASI: DNS rebinding.
- * Kita memeriksa DNS satu kali di src/api, lalu Chromium meresolve nama yang
- * sama sekali lagi dengan resolvernya sendiri. Di antara dua resolusi itu,
- * pemilik domain bisa mengganti jawabannya menjadi alamat privat. Pencegat
- * ini memeriksa bentuk alamat, bukan hasil resolusinya, jadi celah tersebut
- * tetap terbuka. Opsi host-resolver-rules milik Chromium mungkin bisa
- * menutupnya, tetapi kami belum pernah mengujinya, jadi jangan mengklaim
- * risiko ini sudah hilang.
+ * MITIGASI DNS REBINDING (Poin 5.1):
+ * Alamat IP hasil resolusi awal diikat langsung ke opsi browser Chromium
+ * lewat aturan host-resolver-rules (MAP hostname IP), sehingga Chromium tidak
+ * melakukan query DNS ulang yang rentan manipulasi Time-To-Live.
  *
- * CATATAN, BELUM DIKERJAKAN: satu hop redirect ke host yang sama.
- * Sekarang tipe document hanya lolos kalau alamatnya sama persis dengan
- * allowedDocumentUrl. Akibatnya situs yang mengalihkan alamatnya gagal diaudit,
- * misalnya yang mengarahkan / ke /home, atau http ke https. Ini akan sering
- * kena kalau pemakai mengetik alamat tanpa https.
- *
- * Keputusan tim: satu hop redirect BOLEH diizinkan, asalkan hostnya sama
- * dengan host yang diminta. Belum dikerjakan, supaya perubahan ini tidak
- * dicampur ke pekerjaan yang sudah hijau.
- *
- * Kalau nanti dikerjakan, syaratnya:
- * 1. Host tujuan harus sama dengan host allowedDocumentUrl. Beda host berarti
- *    tolak, karena pemeriksaan DNS dan robots.txt dilakukan untuk host lama,
- *    bukan host yang baru.
- * 2. Maksimal satu hop. Rantai redirect yang panjang adalah tanda halaman itu
- *    bukan halaman informasi biasa.
- * 3. Alamat tujuan tetap harus lulus checkUrl seperti alamat lain.
- * 4. Alamat akhir wajib tercatat di snapshot sebagai source.finalUrl, supaya
- *    laporan tidak mengaku mengaudit alamat yang sebenarnya tidak dibuka.
- * 5. Butuh test murni untuk tiga keadaan: redirect host sama, redirect host
- *    berbeda, dan redirect dua kali.
+ * PENGALIHAN SATU HOP PADA HOST YANG SAMA (Poin 5.2):
+ * Tipe document mengizinkan maksimal 1 hop pengalihan selama host tujuan
+ * sama persis dengan host yang diminta (misal upgrade http ke https atau / ke /home).
+ * Pengalihan lintas host dan pengalihan berantai (>1 hop) ditolak mutlak.
  */
 
 import { checkUrl } from "../fetcher/url-policy.mjs";
@@ -87,11 +66,37 @@ function pass(reason) {
  * tetapi kalau suatu saat ada situs katalog yang mengalihkan, gejalanya akan
  * terlihat sebagai audit gagal, bukan sebagai halaman kosong.
  */
-export function decideRequest({ resourceType, url, allowedDocumentUrl } = {}) {
+export function decideRequest({
+  resourceType,
+  url,
+  allowedDocumentUrl,
+  isHydrating = false,
+  redirectCount = 0,
+} = {}) {
   const type = String(resourceType ?? "").trim().toLowerCase();
 
   if (!type) {
     return block("missing-resource-type", "Permintaan tanpa jenis ditolak.");
+  }
+
+  // Poin 3.1: Jendela hidrasi terkendali untuk framework SPA (React, Next.js, Vue)
+  if (isHydrating && type === "script") {
+    const target = checkUrl(allowedDocumentUrl);
+    const asked = checkUrl(url);
+    if (!target.ok || !asked.ok) {
+      return block(`asset-${asked.code || "invalid"}`, asked.message);
+    }
+    try {
+      if (new URL(asked.url).hostname === new URL(target.url).hostname) {
+        return pass("hydration-first-party-script-allowed");
+      }
+    } catch {
+      // Fall through to block
+    }
+    return block(
+      "hydration-third-party-blocked",
+      "Skrip pihak ketiga tetap diblokir selama jendela hidrasi.",
+    );
   }
 
   if (ALWAYS_BLOCKED.includes(type)) {
@@ -115,14 +120,36 @@ export function decideRequest({ resourceType, url, allowedDocumentUrl } = {}) {
       return block(`document-${asked.code}`, asked.message);
     }
 
-    if (asked.url !== target.url) {
-      return block(
-        "document-not-the-target",
-        "Hanya halaman yang diminta pengguna yang boleh dibuka.",
-      );
+    if (asked.url === target.url) {
+      return pass("document-is-the-target");
     }
 
-    return pass("document-is-the-target");
+    // Poin 5.2: Izin satu hop pengalihan (redirect) pada host yang sama
+    if (redirectCount > 0) {
+      const targetHost = target.hostname;
+      const askedHost = asked.hostname;
+
+      if (askedHost !== targetHost) {
+        return block(
+          "document-redirect-cross-host-blocked",
+          "Pengalihan ke host yang berbeda ditolak demi keamanan.",
+        );
+      }
+
+      if (redirectCount > 1) {
+        return block(
+          "document-redirect-limit-exceeded",
+          "Pengalihan dokumen melebihi batas 1 hop.",
+        );
+      }
+
+      return pass("document-same-host-redirect-allowed");
+    }
+
+    return block(
+      "document-not-the-target",
+      "Hanya halaman yang diminta pengguna yang boleh dibuka.",
+    );
   }
 
   if (CHECKED_TYPES.includes(type)) {
@@ -152,19 +179,42 @@ export function createGuardStats() {
  *
  * @returns objek statistik yang terus diperbarui selama halaman dimuat.
  */
-export async function attachGuard({ page, allowedDocumentUrl }) {
+export async function attachGuard({
+  page,
+  allowedDocumentUrl,
+  allowHydration = false,
+  hydrationTimeoutMs = 2500,
+}) {
   const stats = createGuardStats();
   const hosts = new Set();
+  let isHydrating = Boolean(allowHydration);
+  let documentCount = 0;
+
+  if (isHydrating && hydrationTimeoutMs > 0) {
+    setTimeout(() => {
+      isHydrating = false;
+    }, hydrationTimeoutMs);
+  }
 
   await page.route("**/*", async (route) => {
     const request = route.request();
     const type = request.resourceType();
     const url = request.url();
 
+    let redirectCount = 0;
+    if (type === "document") {
+      documentCount++;
+      if (documentCount > 1 || request.redirectedFrom?.()) {
+        redirectCount = documentCount - 1;
+      }
+    }
+
     const decision = decideRequest({
       resourceType: type,
       url,
       allowedDocumentUrl,
+      isHydrating,
+      redirectCount,
     });
 
     if (!stats.byType[type]) stats.byType[type] = { allowed: 0, blocked: 0 };

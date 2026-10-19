@@ -67,6 +67,7 @@ export async function resolveButtonNameCandidates(
         "fab",
         "fal",
         "bi",
+        "ri",
         "lucide",
         "mdi",
         "bx",
@@ -80,7 +81,7 @@ export async function resolveButtonNameCandidates(
 
       const stripIconModifier = (token) =>
         token.replace(
-          /-(lg|sm|xs|md|xl|fill|bold|regular|light|thin|duotone|solid|outline)$/,
+          /-(lg|sm|xs|md|xl|fill|bold|regular|light|thin|duotone|solid|outline|line)$/,
           "",
         );
 
@@ -136,9 +137,9 @@ export async function resolveButtonNameCandidates(
           element.getAttribute("class") || ""
         }`;
         const tokens = raw
-          .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+          .replace(/([\p{Ll}\p{N}])([\p{Lu}])/gu, "$1 $2")
           .toLowerCase()
-          .split(/[^a-z]+/)
+          .split(/[^\p{L}\p{M}\p{N}]+/u)
           .filter(Boolean);
 
         const found = new Set();

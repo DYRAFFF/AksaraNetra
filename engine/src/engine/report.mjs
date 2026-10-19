@@ -36,6 +36,15 @@ export function createMetrics(before, after, ruleIds) {
     0,
   );
 
+  const worsened = Object.entries(rules)
+    .filter(([, item]) => item.after > item.before)
+    .map(([ruleId, item]) => ({
+      ruleId,
+      before: item.before,
+      after: item.after,
+      delta: item.after - item.before,
+    }));
+
   return {
     rules,
     beforeTotal,
@@ -45,9 +54,8 @@ export function createMetrics(before, after, ruleIds) {
       ? Math.round(((beforeTotal - afterTotal) / beforeTotal) * 10_000) / 100
       : 0,
     strictImprovement: afterTotal < beforeTotal,
-    noRegression: Object.values(rules).every(
-      (item) => item.after <= item.before,
-    ),
+    noRegression: worsened.length === 0,
+    worsened,
   };
 }
 

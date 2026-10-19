@@ -62,6 +62,164 @@ function bacaAtribut(record) {
     .filter((value) => typeof value === "string" && value);
 }
 
+const SELF_CLOSING_TAGS = new Set(["img", "input", "br", "hr", "meta", "link", "area", "col"]);
+const FORBIDDEN_TAGS = new Set(["script", "iframe", "object", "embed", "applet", "style", "svg"]);
+
+function escapeAttr(val) {
+  return String(val ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function isSafeAttr(name, value) {
+  if (typeof name !== "string") return false;
+  const cleanName = name.trim();
+  if (!/^[a-zA-Z0-9_:-]+$/.test(cleanName)) return false;
+  if (/^on/i.test(cleanName)) return false;
+  if (/^data-project-a-/i.test(cleanName)) return false;
+
+  const strVal = String(value ?? "").trim();
+  if (/^\s*(javascript|vbscript|data:text\/html):/i.test(strVal)) return false;
+  return true;
+}
+
+function parseAttributesFromTag(openingTagStr) {
+  const attrs = {};
+  const regex = /([a-zA-Z0-9_:-]+)(?:=(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?/g;
+  let match;
+  while ((match = regex.exec(openingTagStr)) !== null) {
+    const attrName = match[1];
+    const attrVal = match[2] ?? match[3] ?? match[4] ?? "";
+    if (isSafeAttr(attrName, attrVal)) {
+      attrs[attrName] = attrVal;
+    }
+  }
+  return attrs;
+}
+
+/**
+ * Menghasilkan cuplikan kode diff HTML mini yang sudah dibersihkan dari tag berbahaya
+ * dan atribut berisiko, menggantikan kebutuhan terhadap htmlAfter mentah.
+ */
+export function createSanitizedSnippet(record) {
+  if (!record || typeof record !== "object") return null;
+
+  if (
+    record.snippet &&
+    typeof record.snippet === "object" &&
+    typeof record.snippet.before === "string" &&
+    typeof record.snippet.after === "string"
+  ) {
+    return {
+      before: record.snippet.before,
+      after: record.snippet.after,
+    };
+  }
+
+  let tagName = "div";
+  let beforeAttrs = {};
+  let innerText = "";
+
+  if (record.prePatchSnapshot && typeof record.prePatchSnapshot === "object") {
+    const rawTag = String(record.prePatchSnapshot.tagName || "").toLowerCase().trim();
+    if (rawTag && !FORBIDDEN_TAGS.has(rawTag)) {
+      tagName = rawTag;
+    }
+    if (record.prePatchSnapshot.attributes && typeof record.prePatchSnapshot.attributes === "object") {
+      for (const [k, v] of Object.entries(record.prePatchSnapshot.attributes)) {
+        if (isSafeAttr(k, v)) {
+          beforeAttrs[k] = String(v);
+        }
+      }
+    }
+    if (typeof record.prePatchSnapshot.textContent === "string") {
+      innerText = record.prePatchSnapshot.textContent.trim().slice(0, 50);
+    }
+  } else if (record.htmlAfter && typeof record.htmlAfter === "string") {
+    const tagMatch = record.htmlAfter.match(/<([a-zA-Z0-9:-]+)(\s[^>]*)?>/i);
+    if (tagMatch) {
+      const rawTag = tagMatch[1].toLowerCase();
+      if (!FORBIDDEN_TAGS.has(rawTag)) {
+        tagName = rawTag;
+      }
+      if (tagMatch[2]) {
+        beforeAttrs = parseAttributesFromTag(tagMatch[2]);
+      }
+    }
+  } else if (record.rule) {
+    if (record.rule === "image-alt") tagName = "img";
+    else if (record.rule === "label") tagName = "input";
+    else if (record.rule === "link-name") tagName = "a";
+    else if (record.rule === "button-name") tagName = "button";
+    else if (record.rule === "document-title") tagName = "title";
+    else if (record.rule === "html-has-lang") tagName = "html";
+    else if (record.rule === "landmark-one-main") tagName = "main";
+    else if (record.rule === "scrollable-region-focusable") tagName = "div";
+
+    if (record.selector && typeof record.selector === "string") {
+      const classMatch = record.selector.match(/\.([a-zA-Z0-9_-]+)/);
+      if (classMatch) {
+        beforeAttrs.class = classMatch[1];
+      }
+      const idMatch = record.selector.match(/#([a-zA-Z0-9_-]+)/);
+      if (idMatch) {
+        beforeAttrs.id = idMatch[1];
+      }
+    }
+  }
+
+  const patches = Array.isArray(record.patches)
+    ? record.patches
+    : Array.isArray(record.appliedPatches)
+      ? record.appliedPatches
+      : [];
+
+  const afterAttrs = { ...beforeAttrs };
+  let afterText = innerText;
+
+  for (const patch of patches) {
+    if (!patch) continue;
+    const attr = patch.attribute;
+    const val = patch.value ?? patch.newValue;
+    if (attr === "textContent") {
+      afterText = String(val ?? "").trim().slice(0, 50);
+    } else if (isSafeAttr(attr, val)) {
+      afterAttrs[attr] = String(val);
+    }
+  }
+
+  const renderTag = (tag, attrs, text) => {
+    const attrPairs = Object.entries(attrs)
+      .map(([k, v]) => `${k}="${escapeAttr(v)}"`)
+      .sort((a, b) => {
+        const order = ["id=", "class=", "type=", "href=", "src="];
+        const aIdx = order.findIndex((prefix) => a.startsWith(prefix));
+        const bIdx = order.findIndex((prefix) => b.startsWith(prefix));
+        if (aIdx !== -1 && bIdx !== -1) return aIdx - bIdx;
+        if (aIdx !== -1) return -1;
+        if (bIdx !== -1) return 1;
+        return a.localeCompare(b);
+      });
+
+    const attrStr = attrPairs.length ? " " + attrPairs.join(" ") : "";
+    if (SELF_CLOSING_TAGS.has(tag)) {
+      return `<${tag}${attrStr}>`;
+    }
+    if (tag === "title") {
+      return `<title${attrStr}>${escapeAttr(text)}</title>`;
+    }
+    const inner = text ? escapeAttr(text) : "...";
+    return `<${tag}${attrStr}>${inner}</${tag}>`;
+  };
+
+  return {
+    before: renderTag(tagName, beforeAttrs, innerText),
+    after: renderTag(tagName, afterAttrs, afterText),
+  };
+}
+
 /**
  * Menyaring satu record engine menjadi bentuk yang aman ditampilkan.
  *
@@ -81,6 +239,7 @@ export function decisionFromRecord(record) {
     label: bacaLabel(record),
     attributes: bacaAtribut(record),
     status: record.status ? String(record.status) : null,
+    snippet: createSanitizedSnippet(record),
   };
 }
 

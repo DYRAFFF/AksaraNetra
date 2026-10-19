@@ -20,6 +20,7 @@ import {
   chooseCardLink,
   dedupeHeadings,
 } from "../src/serializer/blocks.mjs";
+import { wrapPatchedPage } from "../src/serializer/index.mjs";
 
 const SOURCE = "https://sulselprov.go.id/berita";
 
@@ -385,4 +386,45 @@ test("the reader document carries the landmarks a screen reader navigates by", (
   assert.match(html, /<main id="isi">/);
   assert.match(html, /<footer>/);
   assert.match(html, /<a class="lewati" href="#isi">/);
+});
+
+test("wrapPatchedPage robustly injects CSP and banner across different HTML structures", () => {
+  // 1. Standar dokumen lengkap
+  const standard = wrapPatchedPage({
+    html: "<!DOCTYPE html><html><head><title>Judul</title></head><body><h1>Konten</h1></body></html>",
+    disclaimer: DISCLAIMER,
+    sourceUrl: SOURCE,
+  });
+  // Pastikan tidak ada duplikasi doctype
+  const doctypeCount = (standard.match(/<!DOCTYPE/gi) || []).length;
+  assert.equal(doctypeCount, 1);
+  assert.match(standard, /<meta http-equiv="Content-Security-Policy"/);
+  assert.match(standard, /Buka halaman aslinya/);
+
+  // 2. Dokumen tanpa tag <head> eksplisit
+  const noHead = wrapPatchedPage({
+    html: "<html><body><h1>Tanpa Head</h1></body></html>",
+    disclaimer: DISCLAIMER,
+    sourceUrl: SOURCE,
+  });
+  assert.match(noHead, /<head><meta http-equiv="Content-Security-Policy"/);
+  assert.match(noHead, /Buka halaman aslinya/);
+
+  // 3. Dokumen dengan huruf kapital <HEAD> dan <BODY>
+  const uppercase = wrapPatchedPage({
+    html: "<HTML><HEAD><TITLE>Kapital</TITLE></HEAD><BODY><P>Teks</P></BODY></HTML>",
+    disclaimer: DISCLAIMER,
+    sourceUrl: SOURCE,
+  });
+  assert.match(uppercase, /<HEAD><meta http-equiv="Content-Security-Policy"/);
+  assert.match(uppercase, /<BODY><div style=/);
+
+  // 4. Fragmen tanpa tag pembungkus sama sekali
+  const fragment = wrapPatchedPage({
+    html: "<h1>Fragmen Sederhana</h1>",
+    disclaimer: DISCLAIMER,
+    sourceUrl: SOURCE,
+  });
+  assert.match(fragment, /^<!DOCTYPE html>\n<html><head><meta/);
+  assert.match(fragment, /<body><div style=.+<h1>Fragmen Sederhana<\/h1><\/body><\/html>$/);
 });

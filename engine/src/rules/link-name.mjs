@@ -88,7 +88,7 @@ export async function resolveLinkNameCandidates(
           } else if (/^https?:\/\//i.test(document.baseURI)) {
             url = new URL(href, document.baseURI);
           } else {
-            throw new Error("Relative URL has no valid HTTP base URL");
+            url = new URL(href, "https://domain.local");
           }
 
           const host = url.hostname.replace(/^www\./, "").toLowerCase();
@@ -117,6 +117,21 @@ export async function resolveLinkNameCandidates(
             };
           }
 
+          // Sinyal 1: Inline SVG title atau desc
+          const svgTitle = clean(
+            element.querySelector("svg > title, svg > desc")?.textContent || "",
+          );
+          if (svgTitle && svgTitle.length >= 2) {
+            return {
+              rule: "link-name",
+              selector,
+              confidence: 0.92,
+              source: "inline-svg-title",
+              reason: "Inline SVG title describes the link purpose",
+              patches: [{ attribute: "aria-label", value: svgTitle }],
+            };
+          }
+
           const pathname = decodeURIComponent(url.pathname).replace(/\/$/, "");
           const known = knownLinkLabels[pathname] || knownLinkLabels[href];
           if (known) {
@@ -127,6 +142,25 @@ export async function resolveLinkNameCandidates(
               source: "known-link-map",
               reason: "Destination is present in the configured link map",
               patches: [{ attribute: "aria-label", value: known }],
+            };
+          }
+
+          // Sinyal 2: Atribut tooltip eksplisit
+          const tooltip = clean(
+            element.getAttribute("data-original-title") ||
+              element.getAttribute("data-title") ||
+              element.getAttribute("data-tooltip") ||
+              element.getAttribute("title") ||
+              "",
+          );
+          if (tooltip && tooltip.length >= 2) {
+            return {
+              rule: "link-name",
+              selector,
+              confidence: 0.88,
+              source: "tooltip-attribute",
+              reason: "Tooltip attribute specifies link destination purpose",
+              patches: [{ attribute: "aria-label", value: tooltip }],
             };
           }
 
@@ -144,8 +178,75 @@ export async function resolveLinkNameCandidates(
             };
           }
 
+          // Sinyal 3: Slug URL dengan kalibrasi bobot
           const slug = clean(pathname.split("/").filter(Boolean).at(-1) || "");
           if (slug && slug.length <= 50 && !/^\d+$/.test(slug)) {
+            const formattedSlug = slug.replace(/\b\w/g, (c) => c.toUpperCase());
+            const lowerSlug = slug.toLowerCase();
+            const INFORMATIVE_KEYWORDS = [
+              "kontak",
+              "hubungi",
+              "profil",
+              "tentang",
+              "agenda",
+              "layanan",
+              "regulasi",
+              "berita",
+              "artikel",
+              "ppid",
+              "transparansi",
+              "unduh",
+              "download",
+              "faq",
+              "bantuan",
+              "panduan",
+              "kebijakan",
+              "privasi",
+              "syarat",
+              "ketentuan",
+              "home",
+              "beranda",
+            ];
+            const isInformative = INFORMATIVE_KEYWORDS.some(
+              (kw) => lowerSlug === kw || lowerSlug.includes(kw),
+            );
+
+            if (isInformative) {
+              return {
+                rule: "link-name",
+                selector,
+                confidence: 0.85,
+                source: "informative-url-slug",
+                reason: "URL slug matches known informative public section",
+                patches: [
+                  {
+                    attribute: "aria-label",
+                    value: `Buka ${formattedSlug}`,
+                  },
+                ],
+              };
+            }
+
+            if (
+              slug.length < 3 ||
+              /^[a-f0-9]{8,}$/i.test(slug) ||
+              /^(view|detail|item|post|id|data)$/i.test(slug)
+            ) {
+              return {
+                rule: "link-name",
+                selector,
+                confidence: 0.5,
+                source: "technical-url-slug",
+                reason: "Technical URL slug requires human verification",
+                patches: [
+                  {
+                    attribute: "aria-label",
+                    value: `Buka ${formattedSlug}`,
+                  },
+                ],
+              };
+            }
+
             return {
               rule: "link-name",
               selector,
@@ -155,11 +256,12 @@ export async function resolveLinkNameCandidates(
               patches: [
                 {
                   attribute: "aria-label",
-                  value: `Buka ${slug.replace(/\b\w/g, (c) => c.toUpperCase())}`,
+                  value: `Buka ${formattedSlug}`,
                 },
               ],
             };
           }
+
         } catch {
           // Returned as unknown below.
         }

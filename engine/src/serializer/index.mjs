@@ -191,9 +191,13 @@ async function extract(page, strippedTags, maxCardLevels) {
 }
 
 /**
- * Menempelkan CSP dan pemberitahuan ke halaman tertambal.
+ * Menempelkan CSP dan pemberitahuan ke halaman tertambal secara tahan banting.
+ *
+ * Menjamin keberadaan CSP dan banner meskipun dokumen asli tidak memiliki
+ * tag <head> atau <body> eksplisit (HTML5 mengizinkan tag implisit), atau
+ * memiliki variasi huruf kapital dan atribut kompleks.
  */
-function wrapPatchedPage({ html, disclaimer, sourceUrl }) {
+export function wrapPatchedPage({ html, disclaimer, sourceUrl }) {
   const banner =
     `<div style="background:#ffffff;color:#1a1a1a;border-bottom:3px solid #767676;` +
     `padding:12px 16px;font:16px/1.6 system-ui,sans-serif">` +
@@ -201,11 +205,51 @@ function wrapPatchedPage({ html, disclaimer, sourceUrl }) {
     `<a href="${escapeHtml(sourceUrl)}" style="color:#0b3d91">Buka halaman aslinya</a>` +
     `</div>`;
 
-  const head =
+  const headContent =
     `<meta http-equiv="Content-Security-Policy" content="${SNAPSHOT_CSP}"><style>img,svg,video{max-width:100%;height:auto;}body{margin:0;font-family:system-ui,-apple-system,sans-serif;}</style>`;
 
-  let output = html.replace(/<head([^>]*)>/i, `<head$1>${head}`);
-  output = output.replace(/<body([^>]*)>/i, `<body$1>${banner}`);
+  // Bersihkan doctype yang sudah ada agar tidak terjadi duplikasi DOCTYPE ganda
+  let cleanHtml = String(html || "").replace(/^\s*<!DOCTYPE[^>]*>\s*/i, "");
+
+  const hasHead = /<head\b[^>]*>/i.test(cleanHtml);
+  const hasBody = /<body\b[^>]*>/i.test(cleanHtml);
+  const hasHtml = /<html\b[^>]*>/i.test(cleanHtml);
+
+  let output = cleanHtml;
+
+  if (hasHead) {
+    output = output.replace(/(<head\b[^>]*>)/i, `$1${headContent}`);
+  }
+
+  if (hasBody) {
+    output = output.replace(/(<body\b[^>]*>)/i, `$1${banner}`);
+  }
+
+  if (!hasHead && !hasBody && !hasHtml) {
+    output = `<html><head>${headContent}</head><body>${banner}${cleanHtml}</body></html>`;
+  } else {
+    if (!hasHead) {
+      if (hasHtml) {
+        output = output.replace(/(<html\b[^>]*>)/i, `$1<head>${headContent}</head>`);
+      } else {
+        output = `<head>${headContent}</head>${output}`;
+      }
+    }
+    if (!hasBody) {
+      if (hasHtml) {
+        if (/<\/head>/i.test(output)) {
+          output = output.replace(/(<\/head>)/i, `$1<body>${banner}`) + "</body>";
+        } else {
+          output = output.replace(/(<html\b[^>]*>)/i, `$1<body>${banner}`) + "</body>";
+        }
+      } else {
+        output = `<body>${banner}${output}</body>`;
+      }
+    }
+    if (!hasHtml) {
+      output = `<html>${output}</html>`;
+    }
+  }
 
   return `<!DOCTYPE html>\n${output}`;
 }

@@ -17,6 +17,7 @@ const IPV4_SHAPE = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
 const BLOCKED_IPV4 = [
   ["0.0.0.0", 8, "blok jaringan ini sendiri"],
   ["10.0.0.0", 8, "jaringan privat"],
+  ["100.100.100.200", 32, "endpoint metadata Alibaba Cloud"],
   ["100.64.0.0", 10, "blok carrier grade NAT"],
   ["127.0.0.0", 8, "loopback"],
   ["169.254.0.0", 16, "link-local, termasuk endpoint metadata cloud"],

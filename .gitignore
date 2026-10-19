@@ -68,3 +68,6 @@ test-results/
 !**/.env.example
 /backend/backend/
 /backend/node_modules 
+
+# enhancement progress tracking
+/.enhancement-progress/

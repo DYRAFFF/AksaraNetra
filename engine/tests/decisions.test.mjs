@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   MAX_DECISIONS_PER_GROUP,
+  createSanitizedSnippet,
   decisionFromRecord,
   summarizeDecisions,
 } from "../src/decisions/index.mjs";
@@ -119,4 +120,46 @@ test("says out loud when the list was cut short", () => {
   assert.equal(hasil.applied.total, MAX_DECISIONS_PER_GROUP + 3);
   assert.equal(hasil.applied.items.length, MAX_DECISIONS_PER_GROUP);
   assert.equal(hasil.applied.truncated, true);
+});
+
+test("createSanitizedSnippet generates safe, concise before and after HTML diff", () => {
+  const snippet = createSanitizedSnippet(RECORD_NYATA);
+  assert.ok(snippet);
+  assert.ok(snippet.before.includes("<a"));
+  assert.ok(snippet.after.includes('aria-label="Buka Instagram Sulselprov"'));
+  assert.equal(snippet.before.includes("<svg"), false);
+  assert.equal(snippet.after.includes("<svg"), false);
+  assert.ok(snippet.before.length < 250);
+  assert.ok(snippet.after.length < 250);
+
+  const decision = decisionFromRecord(RECORD_NYATA);
+  assert.ok(decision.snippet);
+  assert.equal(decision.snippet.before, snippet.before);
+  assert.equal(decision.snippet.after, snippet.after);
+});
+
+test("createSanitizedSnippet strips XSS payloads, script tags, and event handlers", () => {
+  const maliciousRecord = {
+    rule: "image-alt",
+    selector: "img.danger",
+    patches: [{ attribute: "alt", value: "Deskripsi aman" }],
+    prePatchSnapshot: {
+      tagName: "script",
+      attributes: {
+        src: "javascript:evil()",
+        onload: "alert('xss')",
+        onerror: "stealCookies()",
+        class: "avatar",
+      },
+      textContent: "maliciousScript()",
+    },
+  };
+
+  const snippet = createSanitizedSnippet(maliciousRecord);
+  assert.ok(snippet);
+  assert.equal(snippet.before.includes("<script"), false);
+  assert.equal(snippet.before.includes("onload"), false);
+  assert.equal(snippet.before.includes("onerror"), false);
+  assert.equal(snippet.before.includes("javascript:"), false);
+  assert.equal(snippet.after.includes("Deskripsi aman"), true);
 });

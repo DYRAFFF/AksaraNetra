@@ -257,3 +257,26 @@ test("only shows sites the engine has actually been run against", () => {
     assert.equal(entry.lastVerifiedOn, null);
   }
 });
+
+test("blocks cloud provider metadata hostnames and Alibaba Cloud metadata IP", () => {
+  // 1. Hostname metadata
+  assert.equal(checkUrl("http://metadata.google.internal/").ok, false);
+  assert.equal(checkUrl("http://metadata.google.internal/").code, "local-host-name");
+
+  assert.equal(checkUrl("http://instance-data/").ok, false);
+  assert.equal(checkUrl("http://metadata/").ok, false);
+
+  // 2. Alibaba Cloud metadata IP 100.100.100.200
+  const aliVerdict = classifyIp("100.100.100.200");
+  assert.equal(aliVerdict.allowed, false);
+  assert.match(aliVerdict.reason, /Alibaba Cloud/);
+
+  // 3. IPv4-mapped IPv6
+  const mappedAli = classifyIp("::ffff:100.100.100.200");
+  assert.equal(mappedAli.allowed, false);
+  assert.match(mappedAli.reason, /dibungkus dalam alamat IPv6/);
+
+  const mappedAws = classifyIp("::ffff:169.254.169.254");
+  assert.equal(mappedAws.allowed, false);
+  assert.match(mappedAws.reason, /dibungkus dalam alamat IPv6/);
+});

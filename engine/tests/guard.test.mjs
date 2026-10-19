@@ -144,3 +144,39 @@ test("starts counting from zero and knows which types it checks", () => {
   // Tiga jenis inilah yang boleh lewat setelah diperiksa. Sisanya ditolak.
   assert.deepEqual([...CHECKED_TYPES], ["image", "stylesheet", "font"]);
 });
+
+test("allows 1-hop redirect within the same host for document requests", () => {
+  const verdict = decideRequest({
+    resourceType: "document",
+    url: "https://sulselprov.go.id/berita",
+    allowedDocumentUrl: TARGET,
+    redirectCount: 1,
+  });
+
+  assert.equal(verdict.allow, true);
+  assert.equal(verdict.reason, "document-same-host-redirect-allowed");
+});
+
+test("strictly blocks cross-host redirects for document requests", () => {
+  const verdict = decideRequest({
+    resourceType: "document",
+    url: "https://evil.com/berita",
+    allowedDocumentUrl: TARGET,
+    redirectCount: 1,
+  });
+
+  assert.equal(verdict.allow, false);
+  assert.equal(verdict.reason, "document-redirect-cross-host-blocked");
+});
+
+test("blocks document redirects exceeding 1 hop", () => {
+  const verdict = decideRequest({
+    resourceType: "document",
+    url: "https://sulselprov.go.id/berita/lagi",
+    allowedDocumentUrl: TARGET,
+    redirectCount: 2,
+  });
+
+  assert.equal(verdict.allow, false);
+  assert.equal(verdict.reason, "document-redirect-limit-exceeded");
+});

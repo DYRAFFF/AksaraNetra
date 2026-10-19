@@ -10,6 +10,7 @@ import {
   nextAllowedDelay,
   recordRequest,
 } from "../src/api/index.mjs";
+import { createMockServer } from "./harness/mock-server.mjs";
 
 /**
  * Laporan tiruan yang bentuknya sama dengan keluaran src/runner.
@@ -375,4 +376,83 @@ test("does not write any file when no output folder was asked for", async () => 
   assert.equal(result.ok, true, result.message);
   assert.equal(result.files, null);
   assert.equal(calls.includes("writeSnapshot"), false);
+});
+
+test("retries transient DNS lookup failure and proceeds when second attempt succeeds", async () => {
+  let dnsAttempts = 0;
+  const { calls, deps } = createFakeDeps({
+    resolveHost: async () => {
+      dnsAttempts++;
+      if (dnsAttempts === 1) {
+        const err = new Error("getaddrinfo EAI_AGAIN contoh.go.id");
+        err.code = "EAI_AGAIN";
+        throw err;
+      }
+      return ["93.184.216.34"];
+    },
+    sleep: async () => {},
+  });
+
+  const result = await auditUrl({
+    url: "https://contoh.go.id/",
+    deps,
+    history: new Map(),
+  });
+
+  assert.equal(dnsAttempts, 2);
+  assert.equal(result.ok, true, result.message);
+});
+
+test("createMockServer serves routes and closes cleanly in offline harness", async () => {
+  const mockServer = await createMockServer({
+    "/custom": (req, res) => {
+      res.writeHead(200, { "Content-Type": "text/html" });
+      res.end("<h1>Custom Mock Page</h1>");
+    },
+    "/redirect": (req, res) => {
+      res.writeHead(302, { Location: "/custom" });
+      res.end();
+    },
+  });
+
+  try {
+    const resRobots = await fetch(`${mockServer.url}/robots.txt`);
+    assert.equal(resRobots.status, 200);
+    const robotsText = await resRobots.text();
+    assert.ok(robotsText.includes("User-agent"));
+
+    const resCustom = await fetch(`${mockServer.url}/custom`);
+    assert.equal(resCustom.status, 200);
+    const html = await resCustom.text();
+    assert.ok(html.includes("Custom Mock Page"));
+
+    const resRedirect = await fetch(`${mockServer.url}/redirect`, { redirect: "manual" });
+    assert.equal(resRedirect.status, 302);
+    assert.equal(resRedirect.headers.get("location"), "/custom");
+  } finally {
+    await mockServer.close();
+  }
+});
+
+test("runs end-to-end audit lifecycle against mock server with fake public host deps", async () => {
+  const mockServer = await createMockServer();
+
+  try {
+    const { calls, deps } = createFakeDeps({
+      resolveHost: async () => ["93.184.216.34"],
+      readRobots: async () => "User-agent: *\nAllow: /\n",
+    });
+
+    const result = await auditUrl({
+      url: "https://contoh.go.id/",
+      deps,
+      history: new Map(),
+    });
+
+    assert.equal(result.ok, true, result.message);
+    assert.equal(result.snapshot.summary.beforeTotal, 4);
+    assert.equal(result.snapshot.summary.afterTotal, 1);
+  } finally {
+    await mockServer.close();
+  }
 });

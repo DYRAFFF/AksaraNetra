@@ -32,6 +32,10 @@ import {
   validateSnapshot,
   writeSnapshot,
 } from "../snapshot/index.mjs";
+import {
+  withExponentialBackoff,
+  isTransientNetworkError,
+} from "../shared/retry.mjs";
 
 /**
  * Nomor langkah. Dipakai supaya laporan kegagalan menyebut posisi yang tepat,
@@ -203,12 +207,17 @@ function errorDetail(error) {
  * Satu domain bisa punya banyak alamat. Memeriksa hanya yang pertama berarti
  * alamat kedua bisa mengarah ke mana saja.
  */
-async function resolveHost(hostname) {
-  const records = await dns.lookup(hostname, { all: true });
-  return records.map((record) => record.address);
+async function resolveHost(hostname, { sleep } = {}) {
+  return withExponentialBackoff(
+    async () => {
+      const records = await dns.lookup(hostname, { all: true });
+      return records.map((record) => record.address);
+    },
+    { sleep, isRetryable: isTransientNetworkError },
+  );
 }
 
-async function fetchRobots({ origin, signal = null }) {
+async function fetchRobots({ origin, signal = null }, { sleep } = {}) {
   const initial = new URL("/robots.txt", origin);
   let current = initial;
 
@@ -220,17 +229,21 @@ async function fetchRobots({ origin, signal = null }) {
     // Redirect ke host lain diizinkan (misal www.example.com → example.com),
     // selama host tujuan tetap lolos validasi checkResolvedAddresses di bawah.
 
-    const addresses = await resolveHost(address.hostname);
+    const addresses = await resolveHost(address.hostname, { sleep });
     const resolved = checkResolvedAddresses(addresses);
     if (!resolved.ok) {
       throw new Error(`Redirect robots.txt tidak aman: ${resolved.code}`);
     }
 
-    const response = await fetch(address.url, {
-      headers: { "user-agent": ROBOTS_USER_AGENT },
-      redirect: "manual",
-      signal,
-    });
+    const response = await withExponentialBackoff(
+      () =>
+        fetch(address.url, {
+          headers: { "user-agent": ROBOTS_USER_AGENT },
+          redirect: "manual",
+          signal,
+        }),
+      { sleep, isRetryable: isTransientNetworkError },
+    );
 
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get("location");
@@ -319,7 +332,10 @@ export async function auditUrl({
   // Langkah 2. DNS. Satu alamat privat cukup untuk menolak seluruh domain.
   let addresses = [];
   try {
-    addresses = await use.resolveHost(hostname);
+    addresses = await withExponentialBackoff(
+      () => use.resolveHost(hostname),
+      { sleep: use.sleep, isRetryable: isTransientNetworkError },
+    );
   } catch (error) {
     return failure(STAGES.resolveDns, "dns-lookup-failed", errorDetail(error));
   }
@@ -333,7 +349,10 @@ export async function auditUrl({
   // Langkah 3. robots.txt. Tidak terbaca berarti berhenti, tidak ada berarti lanjut.
   let robotsResponse;
   try {
-    robotsResponse = await use.fetchRobots({ origin: target, hostname, signal });
+    robotsResponse = await withExponentialBackoff(
+      () => use.fetchRobots({ origin: target, hostname, signal }),
+      { sleep: use.sleep, isRetryable: isTransientNetworkError },
+    );
   } catch (error) {
     return failure(STAGES.robots, "robots-fetch-failed", errorDetail(error));
   }
@@ -362,6 +381,10 @@ export async function auditUrl({
   // withBrowser sudah menutup context dan browser di blok finally miliknya,
   // termasuk saat isi task gagal. Karena itu kegagalan di dalam dikembalikan
   // sebagai nilai, bukan dilempar, supaya penutupan tetap berjalan rapi.
+  const runner = await import("../runner/index.mjs");
+  const hostResolverRules =
+    runner.buildHostResolverRules?.({ hostname, addresses }) || [];
+
   let outcome;
   try {
     outcome = await use.withBrowser(async ({ page }) => {
@@ -454,7 +477,7 @@ export async function auditUrl({
         artifacts: audited.artifacts,
         views,
       };
-    }, { signal });
+    }, { signal, hostResolverRules });
   } catch (error) {
     return failure(STAGES.openBrowser, "browser-failed", errorDetail(error));
   }

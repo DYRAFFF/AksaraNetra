@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8">
+    <title>Uji Kasus Tepi Markup Dunia Nyata</title>
+    <style>
+      .btn { padding: 8px 12px; }
+      .table-custom { border-collapse: collapse; width: 100%; }
+      .table-custom td { border: 1px solid #ccc; padding: 6px; }
+    </style>
+  </head>
+  <body>
+    <!-- 1. Lonjakan hirarki heading ekstrem -->
+    <header>
+      <h1>Portal Layanan Publik Daerah</h1>
+    </header>
+
+    <main id="konten-utama">
+      <!-- Lompatan dari h1 langsung ke h4 dan h6 -->
+      <h4>Pengumuman Program Bantuan</h4>
+      <p>Pemerintah menyalurkan bantuan bagi pelaku usaha mikro dan warga prasejahtera.</p>
+      <h6>Ketentuan dan Persyaratan</h6>
+      <p>Persyaratan mencakup kepemilikan KTP elektronik dan surat izin usaha.</p>
+
+      <!-- 2. Kartu berita kembar: satu dengan tautan, satu tanpa tautan -->
+      <section class="daftar-berita">
+        <article class="kartu-berita">
+          <h4 class="judul-berita">
+            <a href="/berita/bantuan-tahap-1">Penyaluran Bantuan Sosial</a>
+          </h4>
+          <p>Penyaluran tahap pertama telah diselesaikan di seluruh distrik.</p>
+        </article>
+
+        <article class="kartu-berita">
+          <h4 class="judul-berita">
+            <span>Penyaluran Bantuan Sosial</span>
+          </h4>
+          <p>Penyaluran tahap kedua masih dalam tahap verifikasi faktual penerima.</p>
+        </article>
+      </section>
+
+      <!-- 3. Tombol dengan icon font multi-class majemuk -->
+      <div class="carousel-navigation">
+        <button class="btn btn-outline-primary fa-solid fa-chevron-left fa-fw"></button>
+        <button class="btn btn-sm bi bi-chevron-right icon-btn"></button>
+        <button class="action-btn ri-search-line"></button>
+      </div>
+
+      <!-- 4. Tabel data tanpa header baku (tanpa th[scope]) -->
+      <table class="table-custom">
+        <tbody>
+          <tr>
+            <td>Wilayah Kecamatan</td>
+            <td>Jumlah Penerima</td>
+            <td>Status Realisasi</td>
+          </tr>
+          <tr>
+            <td>Kecamatan Barat</td>
+            <td>1.250 KK</td>
+            <td>Tersalurkan 100%</td>
+          </tr>
+          <tr>
+            <td>Kecamatan Timur</td>
+            <td>980 KK</td>
+            <td>Proses Verifikasi</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- 5. Form pencarian dengan companion button -->
+      <form class="search-form" action="/cari">
+        <input type="text" class="form-control" name="query">
+        <button type="submit" class="btn btn-primary">Cari</button>
+      </form>
+    </main>
+  </body>
+</html>

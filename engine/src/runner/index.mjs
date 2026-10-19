@@ -12,6 +12,13 @@ import { chromium } from "playwright";
 import { remediatePage } from "../engine/index.mjs";
 import { checkResponse, MAX_RESPONSE_BYTES } from "../fetcher/url-policy.mjs";
 import { getSiteConfig } from "../config/sites.mjs";
+import {
+  withPooledBrowser,
+  closeSharedBrowser,
+  getPoolStats,
+} from "./browser-pool.mjs";
+
+export { closeSharedBrowser, getPoolStats };
 
 export const WCAG_TAGS = Object.freeze([
   "wcag2a",
@@ -28,49 +35,25 @@ export const CONTEXT_OPTIONS = Object.freeze({
   userAgent: USER_AGENT,
 });
 
+export const DEFAULT_TIMEOUTS = Object.freeze({
+  navigationTimeoutMs: 25_000,
+  domTimeoutMs: 15_000,
+  settleTimeoutMs: 10_000,
+});
+
 /**
  * Menjalankan sebuah tugas dengan browser yang dijamin ditutup kembali.
  *
- * AxeBuilder butuh page yang lahir dari context, bukan dari browser langsung.
- * Ini pernah jadi bug, jadi urutannya dikunci di sini.
+ * Menggunakan pool browser Chromium bersama (browser-pool) secara default
+ * untuk efisiensi CPU/memori dan kecepatan startup antar tugas, sambil
+ * menjamin isolasi context per tugas secara steril.
  */
-// Flag ini dibaca dari environment supaya bisa dinyalakan hanya di container
-// dengan resource terbatas (Render Free: 0.1 CPU / 512MB), tanpa mengubah
-// perilaku default saat dijalankan lokal (docker run biasa / npm run dev).
-//
-// --disable-dev-shm-usage : Docker membatasi /dev/shm ke 64MB secara default.
-//   Chromium memakai /dev/shm untuk shared memory antar-proses render; kalau
-//   penuh, Chromium bisa crash diam-diam atau jadi sangat lambat. Flag ini
-//   memaksa Chromium pakai /tmp biasa sebagai gantinya.
-// --disable-gpu            : tidak ada GPU di container, jadi proses inisialisasi
-//   GPU compositor cuma menambah waktu startup tanpa manfaat.
-// --no-sandbox              : menonaktifkan sandbox proses Chromium. Ini
-//   trade-off keamanan (biasanya diterima karena container sendiri sudah
-//   terisolasi, dan target audit adalah domain pemerintah tepercaya, bukan
-//   sembarang website), tapi mengurangi jumlah proses anak yang di-spawn
-//   Chromium -- CPU sangat terbatas seperti 0.1 vCPU lebih diuntungkan oleh
-//   pengurangan proses ini.
-//
-// Flag tambahan di bawah ini semuanya mematikan subsistem Chromium yang
-// sama sekali tidak dipakai audit ini (extension, sync, crash reporter,
-// auto-update, dsb) tapi tetap dialokasikan RAM-nya kalau tidak dimatikan
-// eksplisit. Satu per satu kecil, tapi di container 512MB gabungannya cukup
-// terasa -- ini bukan optimasi kode lagi, ini cuma menyuruh Chromium tidak
-// menyalakan hal yang memang tidak kita perlukan.
-//
-// --renderer-process-limit=1 : batasi jumlah proses renderer jadi satu.
-//   Chromium biasanya memberi tiap tab proses renderer sendiri; kita cuma
-//   pernah punya satu page per browser (lihat withBrowser), jadi batas ini
-//   tidak mengurangi kemampuan, cuma mencegah Chromium menyisakan alokasi
-//   untuk renderer tambahan yang tidak akan pernah dipakai.
-// --js-flags=--max-old-space-size=192 : batas heap V8 di proses renderer.
-//   Tanpa ini V8 boleh tumbuh sampai batas defaultnya sendiri (bisa lebih
-//   dari sisa RAM container), lalu container di-OOM-kill oleh kernel tanpa
-//   sempat GC. Dengan batas eksplisit, V8 akan GC lebih agresif duluan.
 const CONTAINER_LAUNCH_ARGS = [
   "--disable-dev-shm-usage",
   "--disable-gpu",
   "--no-sandbox",
+  "--disable-setuid-sandbox",
+  "--disable-software-rasterizer",
   "--disable-extensions",
   "--disable-background-networking",
   "--disable-background-timer-throttling",
@@ -88,18 +71,59 @@ const CONTAINER_LAUNCH_ARGS = [
   "--js-flags=--max-old-space-size=160",
 ];
 
-function resolveLaunchArgs() {
+export function resolveLaunchArgs(extraArgs = []) {
   // Aktif bila CHROMIUM_LOW_RESOURCE_MODE=1 atau di lingkungan production container
   const isLowResource =
     process.env.CHROMIUM_LOW_RESOURCE_MODE === "1" ||
     process.env.NODE_ENV === "production";
 
-  return isLowResource ? CONTAINER_LAUNCH_ARGS : [];
+  const baseArgs = isLowResource ? CONTAINER_LAUNCH_ARGS : [];
+  return [...baseArgs, ...(Array.isArray(extraArgs) ? extraArgs : [])];
 }
 
-export async function withBrowser(task, { headless = true, signal = null } = {}) {
+/**
+ * Membangun aturan resolver host Chromium (--host-resolver-rules).
+ *
+ * Mengunci resolusi nama domain target ke alamat IP publik yang telah diverifikasi
+ * aman oleh AksaraNetra, mencegah serangan DNS rebinding di sisi browser.
+ */
+export function buildHostResolverRules({ hostname, addresses = [] } = {}) {
+  if (!hostname || !Array.isArray(addresses) || addresses.length === 0) {
+    return [];
+  }
+  const primaryIp = addresses[0];
+  return [`--host-resolver-rules=MAP ${hostname} ${primaryIp}`];
+}
+
+export async function withBrowser(
+  task,
+  {
+    headless = true,
+    signal = null,
+    pool = true,
+    hostResolverRules = [],
+    ...options
+  } = {},
+) {
+  const customArgs = [...(options.launchArgs || []), ...hostResolverRules];
+  const launchArgs = resolveLaunchArgs(customArgs);
+
+  // Jika ada hostResolverRules khusus untuk sebuah domain target, jalankan
+  // browser mandiri dengan aturan tersebut agar tidak memengaruhi domain lain di pool
+  const shouldUsePool = pool !== false && hostResolverRules.length === 0;
+
+  if (shouldUsePool) {
+    return withPooledBrowser(task, {
+      headless,
+      signal,
+      launchArgs,
+      contextOptions: CONTEXT_OPTIONS,
+      ...options,
+    });
+  }
+
   signal?.throwIfAborted();
-  const browser = await chromium.launch({ headless, args: resolveLaunchArgs() });
+  const browser = await chromium.launch({ headless, args: launchArgs });
   const context = await browser.newContext(CONTEXT_OPTIONS);
   const page = await context.newPage();
   const abort = () => context.close().catch(() => {});
@@ -110,38 +134,123 @@ export async function withBrowser(task, { headless = true, signal = null } = {})
     return await task({ page, context, browser });
   } finally {
     signal?.removeEventListener("abort", abort);
-    await context.close();
-    await browser.close();
+    await context.close().catch(() => {});
+    await browser.close().catch(() => {});
   }
 }
 
 /**
- * Menunggu halaman tenang, lalu menggulir terukur.
+ * Mendeteksi dan menutup overlay popup pengumuman, cookie consent banner, atau
+ * modal interaktif sebelum audit dijalankan agar tidak menjebak fokus keyboard.
+ */
+export async function dismissOverlays(page) {
+  if (!page) return;
+
+  try {
+    // 1. Kirim tombol Escape terlebih dahulu untuk dialog WAI-ARIA standar
+    await page.keyboard.press("Escape").catch(() => {});
+
+    // 2. Evaluasi selector tombol dismiss umum di portal publik dan pemerintah
+    await page.evaluate(() => {
+      const DISMISS_SELECTORS = [
+        "button[aria-label*='tutup' i]",
+        "button[aria-label*='close' i]",
+        "[aria-label*='tutup pengumuman' i]",
+        "[aria-label*='close modal' i]",
+        ".modal-close",
+        ".btn-close",
+        ".close-modal",
+        ".popup-close",
+        "button[data-dismiss='modal']",
+        "button[data-bs-dismiss='modal']",
+        ".cookie-consent-accept",
+        ".cookie-agree",
+        "button.cookie-btn",
+        "[id*='cookie'] button",
+        "[class*='cookie'] button",
+      ];
+
+      for (const sel of DISMISS_SELECTORS) {
+        try {
+          const elements = document.querySelectorAll(sel);
+          for (const el of elements) {
+            if (el.offsetParent !== null || el.getClientRects().length > 0) {
+              el.click();
+            }
+          }
+        } catch {
+          // Lanjut jika selektor gagal dievaluasi
+        }
+      }
+
+      // Sembunyikan backdrop gelap yang memblokir viewport
+      const backdrops = document.querySelectorAll(
+        ".modal-backdrop, .popup-backdrop, .overlay-backdrop",
+      );
+      for (const bd of backdrops) {
+        bd.style.display = "none";
+      }
+    });
+
+    await page.waitForTimeout(200);
+  } catch {
+    // Dismiss overlay bersifat best-effort
+  }
+}
+
+/**
+ * Menunggu halaman tenang, menutup overlay modal, lalu menggulir secara adaptif.
  *
  * Menggulir memicu lazy-loaded kartu berita di viewport tanpa meledakkan DOM
  * ke puluhan ribu node pada portal berita tak terbatas (infinite scroll).
  */
-export async function settlePage(page) {
-  await page.waitForLoadState("domcontentloaded", { timeout: 10_000 }).catch(() => {});
-  await page.waitForTimeout(2_000);
+export async function settlePage(page, options = {}) {
+  const domTimeout = options.domTimeoutMs || 10_000;
+  await page
+    .waitForLoadState("domcontentloaded", { timeout: domTimeout })
+    .catch(() => {});
+  await page.waitForTimeout(options.settleDelayMs || 400);
 
+  // Tutup overlay popup dan cookie banner jika ada
+  if (options.dismissOverlays !== false) {
+    await dismissOverlays(page);
+  }
+
+  // Pengguliran adaptif berbasis tinggi viewport dan deteksi stabilisasi
   await page.evaluate(async () => {
     await new Promise((resolve) => {
-      let position = 0;
-      const targetMax = Math.min(document.body.scrollHeight || 3000, 3600);
+      let step = 0;
+      const MAX_STEPS = 8;
+      const viewportHeight = window.innerHeight || 800;
+      let lastHeight = document.body?.scrollHeight || 0;
+      let unchangedCount = 0;
+
       const timer = setInterval(() => {
-        window.scrollBy(0, 800);
-        position += 800;
-        if (position >= targetMax) {
+        window.scrollBy(0, viewportHeight);
+        step++;
+
+        const currentHeight = document.body?.scrollHeight || 0;
+        if (currentHeight === lastHeight) {
+          unchangedCount++;
+        } else {
+          unchangedCount = 0;
+          lastHeight = currentHeight;
+        }
+
+        if (
+          unchangedCount >= 2 ||
+          step >= MAX_STEPS ||
+          window.scrollY + viewportHeight >= currentHeight
+        ) {
           clearInterval(timer);
           window.scrollTo(0, 0);
           resolve();
         }
-      }, 150);
+      }, 100);
     });
   });
 
-  await page.waitForTimeout(1_000);
+  await page.waitForTimeout(options.settleDelayMs || 400);
 }
 
 /**
@@ -156,7 +265,9 @@ export async function auditPage({
   captureScreenshot = true,
   signal = null,
   onProgress = null,
+  timeouts = {},
 }) {
+  const effectiveTimeouts = { ...DEFAULT_TIMEOUTS, ...timeouts };
   const config = siteConfig || getSiteConfig(url);
   const progress = async (value, stage) => {
     signal?.throwIfAborted();
@@ -164,10 +275,51 @@ export async function auditPage({
   };
 
   await progress(35, "Membuka halaman target");
-  const response = await page.goto(url, {
-    waitUntil: "domcontentloaded",
-    timeout: 60_000,
-  });
+
+  let mainResponse = null;
+  const onResponse = (res) => {
+    try {
+      if (!mainResponse || res.url() === url) {
+        mainResponse = res;
+      }
+    } catch {}
+  };
+  page.on?.("response", onResponse);
+
+  let response = null;
+  let partialRecovery = false;
+
+  try {
+    response = await page.goto(url, {
+      waitUntil: "domcontentloaded",
+      timeout: effectiveTimeouts.navigationTimeoutMs,
+    });
+  } catch (error) {
+    const isTimeout = /timeout/i.test(error.message || "");
+    if (isTimeout) {
+      // Periksa apakah dokumen HTML utama sempat masuk (misal DOM sudah ada elemen body)
+      const hasDom = await page
+        .evaluate(() => {
+          return (
+            document &&
+            document.body &&
+            (document.body.children.length > 0 || (document.body.textContent || "").trim().length > 0)
+          );
+        })
+        .catch(() => false);
+
+      if (hasDom && mainResponse && mainResponse.ok()) {
+        response = mainResponse;
+        partialRecovery = true;
+      } else {
+        throw error;
+      }
+    } else {
+      throw error;
+    }
+  } finally {
+    page.off?.("response", onResponse);
+  }
 
   // Status selain 2xx bukan audit yang berhasil. Halaman error yang bersih
   // tidak boleh dilaporkan sebagai halaman yang aksesibel.
@@ -185,7 +337,10 @@ export async function auditPage({
   }
 
   await progress(43, "Menunggu konten halaman selesai dimuat");
-  await settlePage(page);
+  await settlePage(page, {
+    domTimeoutMs: effectiveTimeouts.domTimeoutMs,
+    settleTimeoutMs: effectiveTimeouts.settleTimeoutMs,
+  });
 
   const renderedBytes = await page.evaluate(() =>
     new TextEncoder().encode(document.documentElement.outerHTML).byteLength,
@@ -206,7 +361,7 @@ export async function auditPage({
 
   // remediatePage sudah menjalankan pemindaian luas dan rollback individual.
   // Pakai hasil final itu agar laporan dan artefak mengukur DOM yang sama.
-  const wcagAfter = result.wideAfterAxe;
+  const wcagAfter = result.wideAfterAxe || result.afterAxe;
 
   await progress(75, "Mengumpulkan bukti audit");
   const report = {
@@ -231,10 +386,19 @@ export async function auditPage({
     skipped: result.skipped,
     rolledBack: result.rolledBack,
     metrics: result.metrics,
-    wcagRegression: result.wideRegression,
+    wcagRegression: result.wideRegression || { clean: true, worsened: [], newViolationRules: [] },
     duplicateLabels: result.duplicateLabels,
     staleOverrides: result.staleOverrides,
-    rolledBackRecords: result.rolledBackRecords,
+    rolledBackRecords: result.rolledBackRecords || [],
+    partialRecovery,
+    warnings: {
+      ...(partialRecovery
+        ? {
+            partialLoad:
+              "Halaman mengalami batas waktu pada pemuatan sub-aset, audit dilanjutkan pada pohon DOM yang tersedia.",
+          }
+        : {}),
+    },
   };
 
   return {

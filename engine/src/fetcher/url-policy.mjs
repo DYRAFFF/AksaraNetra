@@ -27,8 +27,14 @@ export const ALLOWED_CONTENT_TYPES = Object.freeze([
   "application/xhtml+xml",
 ]);
 
-/** Nama yang selalu mengarah ke dalam mesin atau jaringan lokal. */
-const BLOCKED_HOSTS = Object.freeze(["localhost", "localhost.localdomain"]);
+/** Nama yang selalu mengarah ke dalam mesin, jaringan lokal, atau metadata cloud. */
+const BLOCKED_HOSTS = Object.freeze([
+  "localhost",
+  "localhost.localdomain",
+  "metadata.google.internal",
+  "instance-data",
+  "metadata",
+]);
 
 const BLOCKED_HOST_SUFFIXES = Object.freeze([
   ".localhost",
@@ -37,6 +43,7 @@ const BLOCKED_HOST_SUFFIXES = Object.freeze([
   ".intranet",
   ".lan",
   ".home.arpa",
+  ".metadata.google.internal",
 ]);
 
 /**

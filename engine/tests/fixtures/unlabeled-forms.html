@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8">
+    <title>Fixture form input tanpa label</title>
+  </head>
+  <body>
+    <main>
+      <!-- 1. Input pencarian dengan tombol submit pendamping -->
+      <div class="search-group">
+        <input type="text" class="search-input">
+        <button type="submit">Cari informasi</button>
+      </div>
+
+      <!-- 2. Input dengan label tetangga tanpa asosiasi for/id -->
+      <div>
+        <label class="sibling-label">Nama Pemohon</label>
+        <input type="text" class="sibling-input">
+      </div>
+
+      <!-- 3. Input dengan atribut id/name camelCase -->
+      <div>
+        <input type="text" class="ident-input" id="userPhoneNumber" name="userPhoneNumber">
+      </div>
+
+      <!-- 4. Input tanpa sinyal teks (wajib di-skip / review) -->
+      <div>
+        <input type="text" class="unknown-input">
+      </div>
+
+      <!-- 5. Input khusus untuk override atau knownFormLabels -->
+      <div>
+        <input type="text" class="portal-query">
+      </div>
+    </main>
+  </body>
+</html>

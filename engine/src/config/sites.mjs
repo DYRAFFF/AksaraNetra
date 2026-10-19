@@ -13,6 +13,12 @@ export const DEFAULT_SITE_CONFIG = Object.freeze({
   siteLabel: "",
   /** Peta pathname atau href ke label yang sudah diverifikasi manusia. */
   knownLinkLabels: {},
+  /** Peta selector/src ke label teks alt gambar yang sudah diverifikasi manusia. */
+  knownImageAlts: {},
+  /** Peta selector/name/id ke label form input yang sudah diverifikasi manusia. */
+  knownFormLabels: {},
+  /** Bahasa dokumen default situs (misal "id"). */
+  defaultLang: "id",
   /** Override label tombol generik, kunci: next, previous, close, search, menu. */
   buttonLabels: {},
   /** Override label tombol dalam konteks carousel atau media. */
@@ -99,6 +105,15 @@ export function getSiteConfig(target = "") {
       ...DEFAULT_SITE_CONFIG.knownLinkLabels,
       ...(overrides.knownLinkLabels || {}),
     },
+    knownImageAlts: {
+      ...DEFAULT_SITE_CONFIG.knownImageAlts,
+      ...(overrides.knownImageAlts || {}),
+    },
+    knownFormLabels: {
+      ...DEFAULT_SITE_CONFIG.knownFormLabels,
+      ...(overrides.knownFormLabels || {}),
+    },
+    defaultLang: overrides.defaultLang || DEFAULT_SITE_CONFIG.defaultLang,
     buttonLabels: {
       ...DEFAULT_SITE_CONFIG.buttonLabels,
       ...(overrides.buttonLabels || {}),

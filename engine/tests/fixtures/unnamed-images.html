@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8">
+    <title>Fixture image tanpa alt</title>
+  </head>
+  <body>
+    <main>
+      <!-- 1. Gambar dekoratif dalam tautan yang sudah berteks -->
+      <a class="news-link" href="https://example.com/berita">
+        <img class="link-thumb" src="thumb.png">
+        <span>Baca Berita Terkini</span>
+      </a>
+
+      <!-- 2. Gambar dekoratif mini / utility class -->
+      <img class="spacer-icon" src="spacer.png" width="12" height="12">
+
+      <!-- 3. Gambar di dalam figure dengan figcaption -->
+      <figure>
+        <img class="figure-photo" src="pelantikan.png">
+        <figcaption>Gubernur melantik pejabat daerah</figcaption>
+      </figure>
+
+      <!-- 4. Gambar dengan atribut title -->
+      <img class="map-photo" src="peta.png" title="Peta Wilayah Provinsi">
+
+      <!-- 5. Gambar dengan atribut data-caption -->
+      <img class="chart-photo" src="grafik.png" data-caption="Grafik Pertumbuhan Ekonomi">
+
+      <!-- 6. Gambar mandiri tanpa sumber teks (wajib di-skip, tidak boleh mengarang) -->
+      <img class="unknown-photo" src="random.png">
+
+      <!-- 7. Logo situs untuk knownImageAlts / override -->
+      <img class="site-logo" src="sulsel-logo.png">
+    </main>
+  </body>
+</html>
