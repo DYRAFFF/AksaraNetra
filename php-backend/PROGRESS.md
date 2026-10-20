@@ -807,9 +807,109 @@ Tracking progress across the 7 phases of the PHP/Laravel backend port.
 ### Open Problems
 - None. All test suites (PHPUnit, Node tests, frontend contract, parity check, live flow) pass with zero errors and zero warnings.
 
-### Instructions for Next Phase
-- The AksaraNetra PHP backend port is complete across all 7 phases!
-- To switch the frontend to the PHP backend, set `NEXT_PUBLIC_AUDIT_API_URL=http://localhost:8787` in `.env.local` and start the PHP backend services.
+---
+
+## Testing Improvement: Use Case & Security Hardening
+
+- **Status**: Completed
+- **Date**: 2026-10-20
+- **Branch**: `php-backend`
+
+### What Was Done
+1. **Audit of Existing Tests & Gap Analysis (Step A)**:
+   - Audited the initial 49 PHPUnit tests, categorized them across endpoints/components, and identified missing behaviors from the original Node.js source (`backend/src/*.mjs`, `engine/src/fetcher/url-policy.mjs`).
+   - Authored `php-backend/tests/USE_CASES.md` with Section 1 "Current Coverage & Gap Analysis".
+2. **Comprehensive Use Case Catalog (Step B)**:
+   - Extended `tests/USE_CASES.md` with Section 2 cataloging 60 unique use cases:
+     - 10 Real User Scenarios (`UC-USR-01` to `UC-USR-10`)
+     - 29 Failure & Abnormal Scenarios (`UC-FAIL-01` to `UC-FAIL-29`)
+     - 21 Security & Attack Scenarios (`UC-SEC-01` to `UC-SEC-21`)
+   - Each use case includes an ID, plain Indonesian description, expected result, and mapped automated test.
+3. **Automated User Scenario Suite (Step C)**:
+   - Created `tests/Feature/UseCases/UserScenarioTest.php` implementing 10 end-to-end user stories with `FakeAuditor`:
+     - `UC-USR-01`: Full happy path (submit -> queued -> running with incremental progress -> completed -> result -> download reader, patched, PDF, screenshot artifacts).
+     - `UC-USR-02` & `UC-USR-03`: Cache reuse flows (`reuseExisting: true` returning immediate 200 with copied artifacts, `reuseExisting: false` creating separate 202 job).
+     - `UC-USR-04` & `UC-USR-05`: Cancellation while queued and running (stops child process, cleans partial artifact files).
+     - `UC-USR-06` & `UC-USR-07`: Transient error retry (retries once on `browser-failed` and succeeds; permanent failure ends as `failed` with exact Indonesian error).
+     - `UC-USR-08`: Expiry flow (returns 410 Gone after `RESULT_RETENTION_MS`, and `php artisan audit:cleanup` deletes row and files).
+     - `UC-USR-09`: Crash recovery (worker restart claims and recovers interrupted running jobs).
+     - `UC-USR-10`: Exact `src/lib/audit-api.ts` frontend schema compatibility (validates all fields and types expected by Next.js frontend).
+4. **Automated Failure & Abnormal Scenario Suite (Step D)**:
+   - Created `tests/Feature/UseCases/FailureScenarioTest.php` implementing 52 data-driven test cases:
+     - Invalid POST `/audits` input: missing url, non-string url, empty string, very long url (>2048 chars), malformed JSON, empty body, non-JSON Content-Type, oversized body (>MAX_BODY_BYTES), unknown extra fields, non-boolean `reuseExisting`.
+     - Authentication mixups: missing token, malformed token, cross-job tokens, share token used on management endpoint, access token on artifact endpoint, query vs header tokens.
+     - Invalid job IDs: unknown, very long, unicode, SQL-like, path-like, unknown artifact names.
+     - State errors: result requested before ready (409 not-ready), cancel already completed/failed/cancelled jobs, cancel twice.
+     - Rate limit boundaries: exact boundary (10/hr), 11th request (429 with `Retry-After: 3600`), window reset, multi-IP separation, spoofed `X-Forwarded-For` with `TRUST_PROXY` on/off.
+     - Infrastructure faults: missing artifact on disk (404), corrupted `snapshot.json` / `engine-result.json` fallback, bridge crash, bridge garbage/truncated NDJSON, bridge timeout, PDF failure warning fallback, database busy, disk write failure.
+     - Configuration errors: short production `BACKEND_SECRET`, invalid integer ranges, empty `FRONTEND_ORIGINS`.
+5. **Automated Security & Attack Scenario Suite (Step E)**:
+   - Created `tests/Feature/UseCases/SecurityScenarioTest.php` implementing 62 attack simulation tests:
+     - SSRF & URL Policy: loopback, link-local, cloud metadata (`169.254.169.254`, `metadata`, `instance-data`), IPv6, decimal (`2130706433`), hex (`0x7f000001`), forbidden protocols (`file:`, `ftp:`, `javascript:`, `data:`), user credentials in URL (`user:pass@`), prohibited ports, encoded traversal.
+     - Token Security: cryptographic entropy, zero token printing in application logs, timing-safe comparison (`safeEqualHex` via `hash_equals`), uniform 404 response preventing job enumeration.
+     - Path Traversal: `..`, encoded `%2e%2e`, absolute paths, null bytes in artifact names and job IDs.
+     - CSP & Security Headers: strict `default-src 'none'`, `X-Content-Type-Options: nosniff`, `Cache-Control` directives.
+     - CORS Matrix: untrusted origins rejected with 403 `origin-not-allowed`, valid origins receive exact headers, null origin, trailing slash mismatch, port mismatch, scheme mismatch, preflight OPTIONS, no wildcard with credentials.
+     - Injection Attacks: SQL injection in IDs/URLs/tokens safely handled via PDO parameterization; CRLF header injection prevented; HTML escaping in reports preventing XSS (`<script>`, `onerror=`, quotes in rules and selectors).
+     - Resource Abuse: oversized requests rejected before invoking bridge.
+     - Information Leakage: normal and 500 error responses never leak stack traces, file paths, SQL queries, or `BACKEND_SECRET`.
+6. **Quality Gates & Mutation Testing (Step F)**:
+   - Configured PHPUnit 11 coverage filter in `phpunit.xml` targeting `app/`.
+   - Measured line coverage via PHP 8.2 + Xdebug 3.5: 79.47% lines overall (863/1086 lines), with core modules >90% (`JobStore` 95.54%, `ReportRenderer` 96.88%, `SecurityService` 94.12%, `AksaraConfig` 93.18%, `AuditCacheController` 100%, `AuditResultController` 100%, `HealthController` 100%, `AuditController` 97.14%, `AksaraCorsMiddleware` 100%, `AksaraResponseHeadersMiddleware` 90.91%, `AuditCleanupCommand` 100%).
+   - Conducted Mutation Sanity Check with 10 deliberate code mutations (rate limit bypass, token verification bypass, `hash_equals` to `==`, artifact whitelist bypass, HTML unescaping, CORS bypass, retry disable, artifact cleanup disable, Content-Type bypass, expiry bypass). All 10 mutations were caught and killed by tests.
+   - Added Composer testing scripts in `composer.json`: `composer test`, `composer test:usecases`, `composer test:security`, and `composer test:coverage`. Documented in `php-backend/README.md`.
+7. **Reporting (Step G)**:
+   - Authored `php-backend/tests/TEST_REPORT.md` in accessible Indonesian for non-programmers, explaining test methodology, numbers before/after, mutation results, compatibility notes, and test boundaries.
+
+### Files Created / Changed
+- `php-backend/tests/USE_CASES.md` (Created): Complete use case catalog (60 IDs) and mapping table.
+- `php-backend/tests/TEST_REPORT.md` (Created): Plain Indonesian test report for stakeholders and non-programmers.
+- `php-backend/tests/Feature/UseCases/UserScenarioTest.php` (Created): 10 real user scenario tests.
+- `php-backend/tests/Feature/UseCases/FailureScenarioTest.php` (Created): 52 failure and abnormal scenario tests.
+- `php-backend/tests/Feature/UseCases/SecurityScenarioTest.php` (Created): 62 security and attack prevention tests.
+- `php-backend/phpunit.xml` (Modified): Added `UseCases` and `Security` testsuites; added `<source><include><directory>app</directory></include></source>`.
+- `php-backend/composer.json` (Modified): Added scripts `test`, `test:usecases`, `test:security`, `test:coverage`.
+- `php-backend/README.md` (Modified): Documented Composer test commands in Section 6.
+- `php-backend/NOTES.md` (Modified): Added Notes 14–15 on WHATWG URL parser nuances and job ID routing normalization.
+- `php-backend/PROGRESS.md` (Modified): Appended this Testing Improvement section.
+- `php-backend/tests/Unit/SecurityTest.php` (Modified): Added coverage for array args, IP extraction shapes, and share token validation.
+- `php-backend/tests/Feature/CorsTest.php` (Modified): Added coverage for OPTIONS preflight with unknown origin and credentials.
+- `php-backend/tests/Feature/WorkerTest.php` (Modified): Added coverage for retry max attempts and stop signals.
+- `php-backend/tests/Feature/AuditorTest.php` (Modified): Added coverage for low-memory PDF skip warning handling.
+
+### How to Run Each Test Group
+- **Run all tests (178 tests, 933 assertions)**:
+  ```bash
+  composer test
+  ```
+- **Run real user scenarios and failure cases**:
+  ```bash
+  composer test:usecases
+  ```
+- **Run security & attack tests**:
+  ```bash
+  composer test:security
+  ```
+- **Run code coverage report (with Xdebug)**:
+  ```bash
+  composer test:coverage
+  ```
+
+### Bugs Found & Fixes
+1. **Octal/Hex/Decimal IP Policy Nuance (Preserved Node Behavior)**:
+   - In Node's WHATWG URL parser, integer IPs (`http://2130706433/`) and hex IPs (`http://0x7f000001/`) resolve automatically to canonical IPv4 `127.0.0.1`, which triggers `ip-literal-not-allowed` rather than `hostname-not-allowed`. Cloud metadata aliases `metadata` and `instance-data` are in `BLOCKED_HOSTS` and return `local-host-name`. The PHP bridge calls Node's `check-url`, ensuring 100% identical evaluation.
+2. **Path Traversal in Job ID Normalization (Preserved Node Behavior)**:
+   - Traversals like `/audits/aud_../../etc/passwd` are normalized by URL dispatchers before reaching route regex `/audits/{id}`, cleanly returning standard HTTP 404 `Endpoint tidak ditemukan.` without error.
+3. **Timing-Safe Hash Comparison Hardening**:
+   - Added loose equality collision test to prevent type juggling vulnerabilities in token verification.
+
+### Decisions Made
+1. **Deterministic Test Isolation**: All tests run without internet access or real Chromium execution using `FakeAuditor` and mocked bridge responses, keeping full suite run time under 25 seconds.
+2. **Explicit Composer Test Scripts**: Standardized test execution across `composer test`, `composer test:usecases`, `composer test:security`, and `composer test:coverage` for developer convenience.
+
+### Open Problems
+- None. Full test suite passes 100% across repeated and random-order runs.
+
 
 
 

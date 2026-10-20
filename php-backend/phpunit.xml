@@ -9,8 +9,17 @@
         </testsuite>
         <testsuite name="Feature">
             <directory>tests/Feature</directory>
+            <exclude>tests/Feature/UseCases</exclude>
+        </testsuite>
+        <testsuite name="UseCases">
+            <directory>tests/Feature/UseCases</directory>
         </testsuite>
     </testsuites>
+    <source>
+        <include>
+            <directory>app</directory>
+        </include>
+    </source>
     <php>
         <env name="APP_ENV" value="testing"/>
         <env name="CACHE_STORE" value="array"/>

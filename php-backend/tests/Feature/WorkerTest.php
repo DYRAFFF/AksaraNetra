@@ -299,4 +299,27 @@ class WorkerTest extends TestCase
         $this->assertSame('failed', $store->getJob('non_transient')?->status);
         $this->assertSame('robots-disallowed', $store->getJob('non_transient')?->errorCode);
     }
+
+    public function test_worker_stop_and_drain_controls(): void
+    {
+        [$root, $store, $add] = $this->createFixture();
+        $fakeAuditor = new FakeAuditor();
+        $worker = new AuditWorker(
+            store: $store,
+            auditor: $fakeAuditor,
+            timeoutMs: 1000,
+            concurrency: 1
+        );
+
+        $this->assertFalse($worker->isStopped());
+        $worker->stop();
+        $this->assertTrue($worker->isStopped());
+
+        // ProcessNext returns false when stopped
+        $this->assertFalse($worker->processNext());
+
+        // Drain on empty returns 0
+        $activeWorker = new AuditWorker(store: $store, auditor: $fakeAuditor);
+        $this->assertSame(0, $activeWorker->drain());
+    }
 }

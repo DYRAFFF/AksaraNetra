@@ -125,7 +125,21 @@ This file records specific quirks, edge cases, and design peculiarities identifi
   - Cache lookup -> Job creation -> Queue status polling -> Worker execution with live Chromium -> Completion -> Result retrieval -> Reader/Patched/Screenshot artifact download -> Cache hit verification: 100% passed.
 - Frontend contract tests: `npm run test:frontend` passed 5/5.
 - PHP unit and feature tests: 49 tests, 320 assertions passed 100%.
-- Node reference tests: 10 tests passed 100%.
+---
+
+## 14. URL Policy & WHATWG URL Parser Nuances
+- **Location**: `engine/src/fetcher/url-policy.mjs` vs `bridge/audit-cli.mjs`
+- **Quirk**:
+  Node's built-in WHATWG `new URL()` parser automatically resolves alternative integer and hexadecimal IP representations (e.g. `http://2130706433/` and `http://0x7f000001/`) into their canonical dotted-quad IPv4 form `127.0.0.1`. Consequently, `url-policy.mjs` evaluates these under the IP literal security rule (`ip-literal-not-allowed`) rather than generic `hostname-not-allowed`. Furthermore, cloud metadata aliases `metadata` and `instance-data` are explicitly listed in `BLOCKED_HOSTS` and rejected with `local-host-name`.
+- **Preservation rule**: The PHP backend routes URL validation directly to the Node engine bridge via `audit-cli.mjs check-url`, ensuring 100% identical parsing and security verdicts without divergent regex behavior.
+
+---
+
+## 15. Path Traversal in Job ID Parameters
+- **Location**: `backend/src/app.mjs:18,20` vs `php-backend/routes/api.php`
+- **Behavior**:
+  When an attacker passes path traversal sequences such as `/audits/aud_../../etc/passwd`, both Node's HTTP router and Laravel's URL dispatcher normalize relative segments before routing. The normalized URL fails to match the single-segment regex `/audits/{id}` and falls through to the global 404 handler (`Endpoint tidak ditemukan.`). In contrast, path traversal in the artifact segment (`/audits/{id}/artifacts/..%2fjobs.sqlite`) is captured by the wildcard route and rejected by `AuditArtifactController` with `Artefak tidak ditemukan.` (404).
+
 
 
 

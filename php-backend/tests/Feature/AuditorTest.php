@@ -185,4 +185,22 @@ class AuditorTest extends TestCase
         $this->expectException(AuditCancelledException::class);
         $auditor->audit($job, shouldCancel: fn() => true);
     }
+
+    public function test_auditor_returns_null_report_pdf_when_neither_pdf_nor_html_exists(): void
+    {
+        $dir = $this->createTempDir('auditor-no-html-');
+        $job = $this->createJob($dir);
+
+        $bridge = new FakeBridgeClient();
+        $bridge->setAuditHandler(function ($id, $url, $artifactDir) {
+            // Return empty files and snapshot, do not write engine-result.json
+            return ['type' => 'result', 'snapshot' => ['empty' => true]];
+        });
+
+        $renderer = new ReportRenderer();
+        $auditor = new Auditor($bridge, $renderer);
+
+        $result = $auditor->audit($job);
+        $this->assertNull($result['artifacts']['reportPdf']);
+    }
 }

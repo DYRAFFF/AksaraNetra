@@ -218,13 +218,27 @@ docker compose down
 
 ## 6. Running Tests & Verifications
 
-### 1. Run PHPUnit Test Suite
-The PHPUnit test suite tests config validation, cryptographic helpers with Node parity vectors, SQLite job store transactions, CORS behaviors, API controllers, worker retries and concurrency, report rendering parity, and bridge execution.
-```bash
-cd php-backend
-php vendor/bin/phpunit
-```
-*Expected: 49 tests, 320 assertions, 100% passing.*
+### 1. Run Tests via Composer Scripts
+The test suite contains 178 tests with 933 assertions covering real user scenarios (`UC-USR`), failure & abnormal cases (`UC-FAIL`), and security/attack prevention (`UC-SEC`).
+
+- **Full test suite**:
+  ```bash
+  composer test
+  ```
+- **Real user and failure use cases (`UC-USR`, `UC-FAIL`)**:
+  ```bash
+  composer test:usecases
+  ```
+- **Security & attack prevention tests (`UC-SEC`)**:
+  ```bash
+  composer test:security
+  ```
+- **Line coverage report (requires Xdebug)**:
+  ```bash
+  composer test:coverage
+  ```
+
+Detailed use cases and security guarantees are documented in [`tests/USE_CASES.md`](./tests/USE_CASES.md) and [`tests/TEST_REPORT.md`](./tests/TEST_REPORT.md).
 
 ### 2. Run Automated Parity Check Script
 The automated parity script starts isolated Node and PHP instances with identical seeds and tests 42 distinct HTTP scenarios side-by-side, comparing status codes, CORS headers, CSP headers, cache directives, location headers, retry-after headers, and JSON body structures:

@@ -73,4 +73,11 @@ class CorsTest extends TestCase
         ]);
         $this->assertFalse($response->headers->has('access-control-allow-origin'));
     }
+
+    public function test_options_request_without_origin_header(): void
+    {
+        $response = $this->call('OPTIONS', '/health');
+        $response->assertStatus(204);
+        $this->assertFalse($response->headers->has('access-control-allow-origin'));
+    }
 }

@@ -120,5 +120,64 @@ class SecurityTest extends TestCase
 
         // Neither present
         $this->assertSame('', SecurityService::bearerToken($reqNoHeader, 'http://localhost'));
+
+        // Object with headers property
+        $objReq = (object) ['headers' => ['authorization' => 'Bearer obj-token']];
+        $this->assertSame('obj-token', SecurityService::bearerToken($objReq));
+
+        // Object with headers property but no authorization
+        $objReqNoAuth = (object) ['headers' => []];
+        $this->assertSame('query-token', SecurityService::bearerToken($objReqNoAuth, 'http://localhost?accessToken=query-token'));
+
+        // Request object
+        $illuminateReq = \Illuminate\Http\Request::create('/test', 'GET', ['accessToken' => 'req-token']);
+        $this->assertSame('req-token', SecurityService::bearerToken($illuminateReq));
+
+        $illuminateHeaderReq = \Illuminate\Http\Request::create('/test', 'GET', [], [], [], [
+            'HTTP_AUTHORIZATION' => 'Bearer req-header-token',
+        ]);
+        $this->assertSame('req-header-token', SecurityService::bearerToken($illuminateHeaderReq));
+    }
+
+    public function test_client_ip_with_various_input_shapes(): void
+    {
+        // Object with trustProxy object
+        $proxyConfig = (object) ['trustProxy' => true];
+        $reqObject = (object) [
+            'headers' => ['X-Forwarded-For' => '203.0.113.195, 70.41.3.18'],
+            'socket' => (object) ['remoteAddress' => '127.0.0.1'],
+        ];
+        $this->assertSame('203.0.113.195', SecurityService::clientIp($reqObject, $proxyConfig));
+
+        // Object without forwarded header
+        $reqObjectNoFwd = (object) [
+            'headers' => [],
+            'socket' => (object) ['remoteAddress' => '198.51.100.4'],
+        ];
+        $this->assertSame('198.51.100.4', SecurityService::clientIp($reqObjectNoFwd, $proxyConfig));
+
+        // Array with top-level remoteAddress
+        $reqArrayRemote = ['remoteAddress' => '198.51.100.5'];
+        $this->assertSame('198.51.100.5', SecurityService::clientIp($reqArrayRemote, false));
+
+        // Object without socket returns unknown
+        $emptyObj = (object) [];
+        $this->assertSame('unknown', SecurityService::clientIp($emptyObj, false));
+
+        // Illuminate Request
+        $illuminateReq = \Illuminate\Http\Request::create('/test', 'GET', [], [], [], [
+            'REMOTE_ADDR' => '203.0.113.50',
+            'HTTP_X_FORWARDED_FOR' => '198.51.100.99',
+        ]);
+        $this->assertSame('198.51.100.99', SecurityService::clientIp($illuminateReq, true));
+        $this->assertSame('203.0.113.50', SecurityService::clientIp($illuminateReq, false));
+    }
+
+    public function test_derive_share_token_missing_params_throws_exception(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('deriveShareToken requires jobId, accessToken, and secret.');
+
+        SecurityService::deriveShareToken('aud_123', null, null);
     }
 }

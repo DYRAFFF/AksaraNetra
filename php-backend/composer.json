@@ -27,7 +27,11 @@
     "scripts": {
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump"
-        ]
+        ],
+        "test": "@php vendor/bin/phpunit",
+        "test:usecases": "@php vendor/bin/phpunit --testsuite=UseCases",
+        "test:security": "@php vendor/bin/phpunit tests/Feature/UseCases/SecurityScenarioTest.php",
+        "test:coverage": "@php -d zend_extension=php_xdebug.dll -d xdebug.mode=coverage vendor/bin/phpunit --coverage-text"
     },
     "extra": {
         "laravel": {
